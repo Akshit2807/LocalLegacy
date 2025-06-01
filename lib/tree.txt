@@ -1,0 +1,30 @@
+.
+├── ./core
+│   ├── ./core/config
+│   │   └── ./core/config/supabase_config.dart
+│   ├── ./core/models
+│   │   └── ./core/models/user_model.dart
+│   ├── ./core/theme
+│   │   └── ./core/theme/app_theme.dart
+│   └── ./core/utils
+├── ./main.dart
+├── ./tree.txt
+├── ./view
+│   ├── ./view/auth
+│   │   └── ./view/auth/screens
+│   │       ├── ./view/auth/screens/forgot_password_screen.dart
+│   │       ├── ./view/auth/screens/login_screen.dart
+│   │       ├── ./view/auth/screens/otp_verification_screen.dart
+│   │       ├── ./view/auth/screens/signup_screen.dart
+│   │       ├── ./view/auth/screens/splash_screen.dart
+│   │       └── ./view/auth/screens/user_type_section_screen.dart
+│   ├── ./view/customer
+│   │   └── ./view/customer/screens
+│   │       └── ./view/customer/screens/customer_dashboard.dart
+│   └── ./view/shopkeeper
+│       └── ./view/shopkeeper/screens
+│           └── ./view/shopkeeper/screens/shopkeeper_dashboard.dart
+└── ./viewmodel
+    └── ./viewmodel/auth_viewmodel.dart
+
+14 directories, 14 files
