@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:local_legacy/view/auth/screens/splash_screen.dart';
 import 'package:local_legacy/viewmodel/auth_viewmodel.dart';
+import 'package:local_legacy/viewmodel/shop_viewmodel.dart';
+import 'package:local_legacy/viewmodel/customer_viewmodel.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'core/theme/app_theme.dart';
@@ -23,6 +25,8 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthViewModel()),
+        ChangeNotifierProvider(create: (_) => ShopViewModel()),
+        ChangeNotifierProvider(create: (_) => CustomerViewModel()),
       ],
       child: MaterialApp(
         title: 'Local Legacy',
