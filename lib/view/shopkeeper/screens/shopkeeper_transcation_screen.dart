@@ -101,6 +101,7 @@ class _ShopkeeperTransactionsScreenState extends State<ShopkeeperTransactionsScr
                   ),
                   child: TabBar(
                     controller: _tabController,
+                    isScrollable: true,
                     indicator: BoxDecoration(
                       color: AppColors.primaryGreen,
                       borderRadius: BorderRadius.circular(12),
@@ -111,35 +112,79 @@ class _ShopkeeperTransactionsScreenState extends State<ShopkeeperTransactionsScr
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    physics: const BouncingScrollPhysics(),
+                    tabAlignment: TabAlignment.center,
+                    overlayColor: MaterialStateProperty.all(Colors.transparent),
+                    dividerColor: Colors.transparent,
                     tabs: [
-                      Tab(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.all_inclusive, size: 16),
-                            const SizedBox(width: 4),
-                            Text('All (${allTransactions.length})'),
-                          ],
+                      SizedBox(
+                        width: MediaQuery.of(context).size.width * 0.27,
+                        child: Tab(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              AnimatedSize(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                                child: const Icon(Icons.all_inclusive, size: 16),
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  'All (${allTransactions.length})',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      Tab(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.add_circle, size: 16),
-                            const SizedBox(width: 4),
-                            Text('Credits (${creditTransactions.length})'),
-                          ],
+                      SizedBox(
+                        width: MediaQuery.of(context).size.width * 0.27,
+                        child: Tab(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              AnimatedSize(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                                child: const Icon(Icons.add_circle, size: 16),
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  'Credits (${creditTransactions.length})',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      Tab(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.remove_circle, size: 16),
-                            const SizedBox(width: 4),
-                            Text('Debits (${debitTransactions.length})'),
-                          ],
+                      SizedBox(
+                        width: MediaQuery.of(context).size.width * 0.27,
+                        child: Tab(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              AnimatedSize(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                                child: const Icon(Icons.remove_circle, size: 16),
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  'Debits (${debitTransactions.length})',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
@@ -384,11 +429,11 @@ class _TransactionTile extends StatelessWidget {
         color: AppColors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border(
-            left: BorderSide(
-              width: 4,
-              color: isCredit ? AppColors.success : AppColors.primaryOrange,
-            ),
+          left: BorderSide(
+            width: 4,
+            color: isCredit ? AppColors.success : AppColors.primaryOrange,
           ),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
@@ -429,6 +474,8 @@ class _TransactionTile extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: AppColors.darkGray,
                   ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -437,6 +484,8 @@ class _TransactionTile extends StatelessWidget {
                     fontSize: 14,
                     color: AppColors.mediumGray,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Row(

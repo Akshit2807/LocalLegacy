@@ -7,6 +7,10 @@ import '../../../viewmodel/customer_viewmodel.dart';
 import '../../../core/models/customer_shop_relation_model.dart';
 
 class CustomerShopsScreen extends StatefulWidget {
+  final VoidCallback? onScanQRPressed;
+
+  const CustomerShopsScreen({super.key, this.onScanQRPressed});
+
   @override
   State<CustomerShopsScreen> createState() => _CustomerShopsScreenState();
 }
@@ -160,10 +164,12 @@ class _CustomerShopsScreenState extends State<CustomerShopsScreen>
 class _ActiveShopsTab extends StatelessWidget {
   final List<CustomerShopRelation> shops;
   final CustomerViewModel customerViewModel;
+  final VoidCallback? onScanQRPressed;
 
   const _ActiveShopsTab({
     required this.shops,
     required this.customerViewModel,
+    this.onScanQRPressed,
   });
 
   @override
@@ -174,9 +180,14 @@ class _ActiveShopsTab extends StatelessWidget {
         title: 'No Active Shops',
         subtitle: 'Scan a shop QR code to get started',
         actionText: 'Scan QR Code',
-        onAction: () {
-          // This would trigger the QR scanner
-          DefaultTabController.of(context)?.animateTo(3); // Navigate to QR tab
+        onAction: onScanQRPressed ?? () {
+          //TODO: Navigate to QR Scanner tab
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Please go to the QR Scanner tab'),
+              backgroundColor: AppColors.primaryOrange,
+            ),
+          );
         },
       );
     }

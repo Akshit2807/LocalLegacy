@@ -35,8 +35,9 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
   }
 
   void _checkSecurityPin(CustomerViewModel customerViewModel, String customerId) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (customerViewModel.securityPin == null) {
+    // Use a delayed callback to ensure the widget tree is built
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted && customerViewModel.securityPin == null) {
         _showSetPinDialog(customerViewModel, customerId);
       }
     });
@@ -49,73 +50,102 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Text(
-          'Set Security PIN',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Please set a 4-digit PIN for secure transactions',
-              style: GoogleFonts.poppins(),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: pinController,
-              keyboardType: TextInputType.number,
-              obscureText: true,
-              maxLength: 4,
-              decoration: const InputDecoration(
-                labelText: 'Enter PIN',
-                counterText: '',
+      builder: (context) => WillPopScope(
+        onWillPop: () async => false, // Prevent dismissing
+        child: AlertDialog(
+          title: Text(
+            'Set Security PIN',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Please set a 4-digit PIN for secure transactions',
+                style: GoogleFonts.poppins(),
+                textAlign: TextAlign.center,
               ),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: confirmPinController,
-              keyboardType: TextInputType.number,
-              obscureText: true,
-              maxLength: 4,
-              decoration: const InputDecoration(
-                labelText: 'Confirm PIN',
-                counterText: '',
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: pinController,
+                keyboardType: TextInputType.number,
+                obscureText: true,
+                maxLength: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Enter PIN',
+                  counterText: '',
+                ),
+                onChanged: (value) {
+                  // Auto-focus to confirm field when 4 digits entered
+                  if (value.length == 4) {
+                    FocusScope.of(context).nextFocus();
+                  }
+                },
               ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: confirmPinController,
+                keyboardType: TextInputType.number,
+                obscureText: true,
+                maxLength: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Confirm PIN',
+                  counterText: '',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            Consumer<CustomerViewModel>(
+              builder: (context, viewModel, child) {
+                return ElevatedButton(
+                  onPressed: viewModel.isLoading ? null : () async {
+                    if (pinController.text.length == 4 &&
+                        pinController.text == confirmPinController.text) {
+                      final success = await viewModel.setSecurityPin(
+                        customerId,
+                        pinController.text,
+                      );
+                      if (success && context.mounted) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Security PIN set successfully!'),
+                            backgroundColor: AppColors.success,
+                          ),
+                        );
+                      } else if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(viewModel.errorMessage ?? 'Failed to set PIN'),
+                            backgroundColor: AppColors.error,
+                          ),
+                        );
+                      }
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('PINs do not match or invalid length'),
+                          backgroundColor: AppColors.error,
+                        ),
+                      );
+                    }
+                  },
+                  child: viewModel.isLoading
+                      ? SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.white),
+                    ),
+                  )
+                      : Text('Set PIN'),
+                );
+              },
             ),
           ],
         ),
-        actions: [
-          ElevatedButton(
-            onPressed: () async {
-              if (pinController.text.length == 4 &&
-                  pinController.text == confirmPinController.text) {
-                final success = await customerViewModel.setSecurityPin(
-                  customerId,
-                  pinController.text,
-                );
-                if (success && context.mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Security PIN set successfully!'),
-                      backgroundColor: AppColors.success,
-                    ),
-                  );
-                }
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('PINs do not match or invalid length'),
-                    backgroundColor: AppColors.error,
-                  ),
-                );
-              }
-            },
-            child: Text('Set PIN'),
-          ),
-        ],
       ),
     );
   }
@@ -132,7 +162,13 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
                 customerViewModel: customerViewModel,
                 authViewModel: authViewModel,
               ),
-              CustomerShopsScreen(),
+              CustomerShopsScreen(
+                onScanQRPressed: () {
+                  setState(() {
+                    _currentIndex = 3; // Navigate to QR scanner tab
+                  });
+                },
+              ),
               CustomerTransactionsScreen(),
               _QRScannerScreen(
                 customerViewModel: customerViewModel,
@@ -720,6 +756,8 @@ class _TransactionTile extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: AppColors.darkGray,
                   ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -728,6 +766,8 @@ class _TransactionTile extends StatelessWidget {
                     fontSize: 12,
                     color: AppColors.mediumGray,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),

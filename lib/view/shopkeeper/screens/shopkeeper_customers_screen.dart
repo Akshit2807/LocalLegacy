@@ -83,7 +83,7 @@ class _ShopkeeperCustomersScreenState extends State<ShopkeeperCustomersScreen>
                   ),
                 ),
 
-                // Tab Bar
+                // Tab Bar//TODO:Review this
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 24),
                   decoration: BoxDecoration(
@@ -92,6 +92,7 @@ class _ShopkeeperCustomersScreenState extends State<ShopkeeperCustomersScreen>
                   ),
                   child: TabBar(
                     controller: _tabController,
+                    isScrollable: true,
                     indicator: BoxDecoration(
                       color: AppColors.primaryGreen,
                       borderRadius: BorderRadius.circular(12),
@@ -102,35 +103,79 @@ class _ShopkeeperCustomersScreenState extends State<ShopkeeperCustomersScreen>
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    physics: const BouncingScrollPhysics(),
+                    tabAlignment: TabAlignment.center,
+                    overlayColor: WidgetStateProperty.all(Colors.transparent),
+                    dividerColor: Colors.transparent,
                     tabs: [
-                      Tab(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.hourglass_empty, size: 16),
-                            const SizedBox(width: 4),
-                            Text('Pending (${pendingCustomers.length})'),
-                          ],
+                      SizedBox(
+                        width: MediaQuery.of(context).size.width * 0.30,
+                        child: Tab(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              AnimatedSize(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                                child: const Icon(Icons.hourglass_empty, size: 16),
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  'Pending (${pendingCustomers.length})',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      Tab(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.check_circle, size: 16),
-                            const SizedBox(width: 4),
-                            Text('Active (${approvedCustomers.length})'),
-                          ],
+                      SizedBox(
+                        width: MediaQuery.of(context).size.width * 0.30,
+                        child: Tab(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              AnimatedSize(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                                child: const Icon(Icons.check_circle, size: 16),
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  'Active (${approvedCustomers.length})',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      Tab(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.warning, size: 16),
-                            const SizedBox(width: 4),
-                            Text('Overdue (${overdueCustomers.length})'),
-                          ],
+                      SizedBox(
+                        width: MediaQuery.of(context).size.width * 0.30,
+                        child: Tab(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              AnimatedSize(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                                child: const Icon(Icons.warning, size: 16),
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  'Overdue (${overdueCustomers.length})',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],

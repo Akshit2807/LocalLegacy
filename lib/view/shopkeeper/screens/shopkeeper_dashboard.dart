@@ -704,6 +704,8 @@ class _TransactionTile extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: AppColors.darkGray,
                   ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -712,6 +714,8 @@ class _TransactionTile extends StatelessWidget {
                     fontSize: 12,
                     color: AppColors.mediumGray,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),

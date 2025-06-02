@@ -99,48 +99,89 @@ class _CustomerTransactionsScreenState extends State<CustomerTransactionsScreen>
                   decoration: BoxDecoration(
                     color: AppColors.lightGray,
                     borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppColors.lightGray,
+                      width: 0,
+                    ),
                   ),
                   child: TabBar(
                     controller: _tabController,
+                    isScrollable: false,
                     indicator: BoxDecoration(
                       color: AppColors.primaryOrange,
                       borderRadius: BorderRadius.circular(12),
                     ),
+                    indicatorPadding: const EdgeInsets.all(4),
+                    labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+                    indicatorSize: TabBarIndicatorSize.tab,
                     labelColor: AppColors.white,
                     unselectedLabelColor: AppColors.mediumGray,
                     labelStyle: GoogleFonts.poppins(
-                      fontSize: 14,
+                      fontSize: 11,
                       fontWeight: FontWeight.w600,
                     ),
+                    overlayColor: MaterialStateProperty.resolveWith<Color?>(
+                          (Set<MaterialState> states) {
+                        return states.contains(MaterialState.focused) ? null : Colors.transparent;
+                      },
+                    ),
+                    physics: const BouncingScrollPhysics(),
                     tabs: [
                       Tab(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.all_inclusive, size: 16),
-                            const SizedBox(width: 4),
-                            Text('All (${allTransactions.length})'),
-                          ],
+                        child: Container(
+                          height: 36,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.all_inclusive, size: 12),
+                              const SizedBox(width: 2),
+                              Flexible(
+                                child: Text(
+                                  'All (${allTransactions.length})',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                       Tab(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.shopping_cart, size: 16),
-                            const SizedBox(width: 4),
-                            Text('Purchases (${debitTransactions.length})'),
-                          ],
+                        child: Container(
+                          height: 36,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.shopping_cart, size: 12),
+                              const SizedBox(width: 2),
+                              Flexible(
+                                child: Text(
+                                  'Purchases (${debitTransactions.length})',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                       Tab(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.payment, size: 16),
-                            const SizedBox(width: 4),
-                            Text('Payments (${creditTransactions.length})'),
-                          ],
+                        child: Container(
+                          height: 36,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.payment, size: 12),
+                              const SizedBox(width: 2),
+                              Flexible(
+                                child: Text(
+                                  'Payments (${creditTransactions.length})',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
@@ -458,6 +499,8 @@ class _TransactionTile extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: AppColors.darkGray,
                   ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -466,6 +509,8 @@ class _TransactionTile extends StatelessWidget {
                     fontSize: 14,
                     color: AppColors.mediumGray,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 6),
                 Row(
@@ -531,7 +576,6 @@ class _TransactionTile extends StatelessWidget {
                   style: GoogleFonts.poppins(
                     fontSize: 9,
                     color: AppColors.mediumGray,
-                    // fontFamily: 'monospace', // Not supported in GoogleFonts.poppins
                   ),
                 ),
               ),
