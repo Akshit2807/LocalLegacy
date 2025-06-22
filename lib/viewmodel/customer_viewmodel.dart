@@ -1,19 +1,20 @@
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../core/config/supabase_config.dart';
-import '../core/models/shop_model.dart';
-import '../core/models/customer_shop_relation_model.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../core/config/firebase_config.dart';
+import '../core/models/firebase_shop_model.dart';
+import '../core/models/firebase_customer_shop_relation_model.dart';
+import '../core/utils/qr_utils.dart';
 
 class CustomerViewModel extends ChangeNotifier {
-  List<CustomerShopRelation> _registeredShops = [];
-  List<TransactionModel> _transactions = [];
+  List<FirebaseCustomerShopRelation> _registeredShops = [];
+  List<FirebaseTransactionModel> _transactions = [];
   String? _securityPin;
   bool _isLoading = false;
   String? _errorMessage;
 
   // Getters
-  List<CustomerShopRelation> get registeredShops => _registeredShops;
-  List<TransactionModel> get transactions => _transactions;
+  List<FirebaseCustomerShopRelation> get registeredShops => _registeredShops;
+  List<FirebaseTransactionModel> get transactions => _transactions;
   String? get securityPin => _securityPin;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
@@ -35,9 +36,9 @@ class CustomerViewModel extends ChangeNotifier {
       .where((s) => s.status == RequestStatus.approved)
       .length;
 
-  CustomerShopRelation? get nearestDueDate => _registeredShops
+  FirebaseCustomerShopRelation? get nearestDueDate => _registeredShops
       .where((s) => s.status == RequestStatus.approved)
-      .fold<CustomerShopRelation?>(null, (nearest, current) {
+      .fold<FirebaseCustomerShopRelation?>(null, (nearest, current) {
     if (nearest == null) return current;
     return current.dueDate.isBefore(nearest.dueDate) ? current : nearest;
   });
@@ -80,13 +81,14 @@ class CustomerViewModel extends ChangeNotifier {
   // Load security pin
   Future<void> _loadSecurityPin(String customerId) async {
     try {
-      final response = await supabase
-          .from('profiles')
-          .select('security_pin')
-          .eq('id', customerId)
-          .single();
+      final userDoc = await FirebaseConfig.usersCollection
+          .doc(customerId)
+          .get();
 
-      _securityPin = response['security_pin'];
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        _securityPin = userData['security_pin'];
+      }
     } catch (e) {
       // Security pin not set yet
       _securityPin = null;
@@ -99,10 +101,12 @@ class CustomerViewModel extends ChangeNotifier {
     _setError(null);
 
     try {
-      await supabase
-          .from('profiles')
-          .update({'security_pin': pin})
-          .eq('id', customerId);
+      await FirebaseConfig.usersCollection
+          .doc(customerId)
+          .update({
+        'security_pin': pin,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
 
       _securityPin = pin;
       _setLoading(false);
@@ -118,17 +122,13 @@ class CustomerViewModel extends ChangeNotifier {
   // Load registered shops
   Future<void> _loadRegisteredShops(String customerId) async {
     try {
-      final response = await supabase
-          .from('customer_shop_relations')
-          .select('''
-            *,
-            shops!shop_id (shop_name, address, qr_code)
-          ''')
-          .eq('customer_id', customerId)
-          .order('joined_date', ascending: false);
+      final snapshot = await FirebaseConfig.FirebaseCustomerShopRelationsCollection
+          .where('customer_id', isEqualTo: customerId)
+          .orderBy('joined_date', descending: true)
+          .get();
 
-      _registeredShops = (response as List)
-          .map((json) => CustomerShopRelation.fromJson(json))
+      _registeredShops = snapshot.docs
+          .map((doc) => FirebaseCustomerShopRelation.fromFirestore(doc))
           .toList();
 
       notifyListeners();
@@ -140,18 +140,14 @@ class CustomerViewModel extends ChangeNotifier {
   // Load transactions
   Future<void> _loadTransactions(String customerId) async {
     try {
-      final response = await supabase
-          .from('transactions')
-          .select('''
-            *,
-            shops!shop_id (shop_name)
-          ''')
-          .eq('customer_id', customerId)
-          .order('timestamp', ascending: false)
-          .limit(100);
+      final snapshot = await FirebaseConfig.transactionsCollection
+          .where('customer_id', isEqualTo: customerId)
+          .orderBy('timestamp', descending: true)
+          .limit(100)
+          .get();
 
-      _transactions = (response as List)
-          .map((json) => TransactionModel.fromJson(json))
+      _transactions = snapshot.docs
+          .map((doc) => FirebaseTransactionModel.fromFirestore(doc))
           .toList();
 
       notifyListeners();
@@ -166,21 +162,28 @@ class CustomerViewModel extends ChangeNotifier {
     _setError(null);
 
     try {
-      // Extract shop info from QR
-      if (!qrData.startsWith('shop_')) {
+      // Parse QR data
+      final qrInfo = QRUtils.parseQRData(qrData);
+      if (qrInfo == null || qrInfo['type'] != 'shop') {
         _setError('Invalid QR code');
         _setLoading(false);
         return null;
       }
 
-      // Get shop details
-      final shopResponse = await supabase
-          .from('shops')
-          .select()
-          .eq('qr_code', qrData)
-          .single();
+      final shopId = qrInfo['shop_id'] as String;
 
-      final shop = ShopModel.fromJson(shopResponse);
+      // Get shop details
+      final shopDoc = await FirebaseConfig.shopsCollection
+          .doc(shopId)
+          .get();
+
+      if (!shopDoc.exists) {
+        _setError('Shop not found');
+        _setLoading(false);
+        return null;
+      }
+
+      final shop = FirebaseShopModel.fromFirestore(shopDoc);
 
       // Check if customer is already registered with this shop
       final existingRelation = _registeredShops
@@ -206,7 +209,7 @@ class CustomerViewModel extends ChangeNotifier {
       }
 
     } catch (e) {
-      _setError('Shop not found or QR code invalid');
+      _setError('Shop not found or QR code invalid: $e');
       _setLoading(false);
       return null;
     }
@@ -219,18 +222,22 @@ class CustomerViewModel extends ChangeNotifier {
 
     try {
       // Get shop details
-      final shopResponse = await supabase
-          .from('shops')
-          .select()
-          .eq('id', shopId)
-          .single();
+      final shopDoc = await FirebaseConfig.shopsCollection
+          .doc(shopId)
+          .get();
 
-      final shop = ShopModel.fromJson(shopResponse);
+      if (!shopDoc.exists) {
+        _setError('Shop not found');
+        _setLoading(false);
+        return false;
+      }
 
-      // Create new relation
-      final relationId = DateTime.now().millisecondsSinceEpoch.toString();
-      final newRelation = CustomerShopRelation(
-        id: relationId,
+      final shop = FirebaseShopModel.fromFirestore(shopDoc);
+
+      // Create new relation document
+      final relationDoc = FirebaseConfig.FirebaseCustomerShopRelationsCollection.doc();
+      final newRelation = FirebaseCustomerShopRelation(
+        id: relationDoc.id,
         customerId: customerId,
         shopId: shopId,
         shopkeeperId: shop.shopkeeperId,
@@ -243,9 +250,7 @@ class CustomerViewModel extends ChangeNotifier {
         isActive: true,
       );
 
-      await supabase
-          .from('customer_shop_relations')
-          .insert(newRelation.toJson());
+      await relationDoc.set(newRelation.toFirestore());
 
       await _loadRegisteredShops(customerId);
       _setLoading(false);
@@ -280,30 +285,109 @@ class CustomerViewModel extends ChangeNotifier {
         return false;
       }
 
+      // Start a batch operation
+      final batch = FirebaseConfig.firestore.batch();
+
       // Create transaction
-      final transactionId = DateTime.now().millisecondsSinceEpoch.toString();
-      final transaction = TransactionModel(
-        id: transactionId,
+      final transactionDoc = FirebaseConfig.transactionsCollection.doc();
+      final transaction = FirebaseTransactionModel(
+        id: transactionDoc.id,
         customerId: relation.customerId,
         shopId: shopId,
         shopkeeperId: relation.shopkeeperId,
         amount: amount,
         type: TransactionType.debit,
-        description: 'Purchase at shop',
+        description: 'Purchase at ${await _getShopName(shopId)}',
         timestamp: DateTime.now(),
         securityPin: pin,
+        metadata: {
+          'payment_method': 'qr_scan',
+          'available_credit_before': relation.availableCredit,
+        },
       );
 
-      await supabase.from('transactions').insert(transaction.toJson());
+      batch.set(transactionDoc, transaction.toFirestore());
 
       // Update relation
-      await supabase
-          .from('customer_shop_relations')
-          .update({
-        'current_balance': relation.currentBalance - amount,
-        'used_amount': relation.usedAmount + amount,
-      })
-          .eq('id', relation.id);
+      batch.update(
+        FirebaseConfig.FirebaseCustomerShopRelationsCollection.doc(relation.id),
+        {
+          'current_balance': relation.currentBalance - amount,
+          'used_amount': relation.usedAmount + amount,
+          'updated_at': FieldValue.serverTimestamp(),
+        },
+      );
+
+      // Commit batch
+      await batch.commit();
+
+      await _loadRegisteredShops(relation.customerId);
+      await _loadTransactions(relation.customerId);
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError('Failed to make payment: $e');
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  // Helper method to get shop name
+  Future<String> _getShopName(String shopId) async {
+    try {
+      final shopDoc = await FirebaseConfig.shopsCollection.doc(shopId).get();
+      if (shopDoc.exists) {
+        final shop = FirebaseShopModel.fromFirestore(shopDoc);
+        return shop.shopName;
+      }
+      return 'Unknown Shop';
+    } catch (e) {
+      return 'Shop';
+    }
+  }
+
+  // Make manual payment (credit payment)
+  Future<bool> makeManualPayment(String shopId, double amount, String description) async {
+    _setLoading(true);
+    _setError(null);
+
+    try {
+      final relation = _registeredShops.firstWhere((r) => r.shopId == shopId);
+
+      // Start a batch operation
+      final batch = FirebaseConfig.firestore.batch();
+
+      // Create transaction
+      final transactionDoc = FirebaseConfig.transactionsCollection.doc();
+      final transaction = FirebaseTransactionModel(
+        id: transactionDoc.id,
+        customerId: relation.customerId,
+        shopId: shopId,
+        shopkeeperId: relation.shopkeeperId,
+        amount: amount,
+        type: TransactionType.credit,
+        description: description,
+        timestamp: DateTime.now(),
+        metadata: {
+          'payment_method': 'manual',
+          'initiated_by': 'customer',
+        },
+      );
+
+      batch.set(transactionDoc, transaction.toFirestore());
+
+      // Update relation
+      batch.update(
+        FirebaseConfig.FirebaseCustomerShopRelationsCollection.doc(relation.id),
+        {
+          'current_balance': relation.currentBalance + amount,
+          'used_amount': relation.usedAmount - amount,
+          'updated_at': FieldValue.serverTimestamp(),
+        },
+      );
+
+      // Commit batch
+      await batch.commit();
 
       await _loadRegisteredShops(relation.customerId);
       await _loadTransactions(relation.customerId);
@@ -319,54 +403,102 @@ class CustomerViewModel extends ChangeNotifier {
   // Setup real-time listeners
   void _setupRealtimeListeners(String customerId) {
     // Listen to relation changes
-    supabase
-        .channel('customer_relations_$customerId')
-        .onPostgresChanges(
-      event: PostgresChangeEvent.all,
-      schema: 'public',
-      table: 'customer_shop_relations',
-      filter: PostgresChangeFilter(
-        type: PostgresChangeFilterType.eq,
-        column: 'customer_id',
-        value: customerId,
-      ),
-      callback: (payload) {
-        _loadRegisteredShops(customerId);
+    FirebaseConfig.FirebaseCustomerShopRelationsCollection
+        .where('customer_id', isEqualTo: customerId)
+        .snapshots()
+        .listen(
+          (snapshot) {
+        _registeredShops = snapshot.docs
+            .map((doc) => FirebaseCustomerShopRelation.fromFirestore(doc))
+            .toList();
+        notifyListeners();
       },
-    )
-        .subscribe();
+      onError: (error) {
+        _setError('Error listening to shop changes: $error');
+      },
+    );
 
     // Listen to transaction changes
-    supabase
-        .channel('customer_transactions_$customerId')
-        .onPostgresChanges(
-      event: PostgresChangeEvent.all,
-      schema: 'public',
-      table: 'transactions',
-      filter: PostgresChangeFilter(
-        type: PostgresChangeFilterType.eq,
-        column: 'customer_id',
-        value: customerId,
-      ),
-      callback: (payload) {
-        _loadTransactions(customerId);
+    FirebaseConfig.transactionsCollection
+        .where('customer_id', isEqualTo: customerId)
+        .orderBy('timestamp', descending: true)
+        .limit(100)
+        .snapshots()
+        .listen(
+          (snapshot) {
+        _transactions = snapshot.docs
+            .map((doc) => FirebaseTransactionModel.fromFirestore(doc))
+            .toList();
+        notifyListeners();
       },
-    )
-        .subscribe();
+      onError: (error) {
+        _setError('Error listening to transaction changes: $error');
+      },
+    );
   }
 
   // Get shop details by ID
-  CustomerShopRelation? getShopRelation(String shopId) {
+  FirebaseCustomerShopRelation? getShopRelation(String shopId) {
     return _registeredShops
         .where((r) => r.shopId == shopId)
         .firstOrNull;
   }
 
   // Get transactions for specific shop
-  List<TransactionModel> getShopTransactions(String shopId) {
+  List<FirebaseTransactionModel> getShopTransactions(String shopId) {
     return _transactions
         .where((t) => t.shopId == shopId)
         .toList();
+  }
+
+  // Get pending shops
+  List<FirebaseCustomerShopRelation> get pendingShops => _registeredShops
+      .where((s) => s.status == RequestStatus.pending)
+      .toList();
+
+  // Get approved shops
+  List<FirebaseCustomerShopRelation> get approvedShops => _registeredShops
+      .where((s) => s.status == RequestStatus.approved)
+      .toList();
+
+  // Get overdue shops
+  List<FirebaseCustomerShopRelation> get overdueShops => _registeredShops
+      .where((s) => s.status == RequestStatus.approved && s.isOverdue)
+      .toList();
+
+  // Get monthly spending
+  double getMonthlySpending([DateTime? month]) {
+    final targetMonth = month ?? DateTime.now();
+    return _transactions
+        .where((t) =>
+    t.type == TransactionType.debit &&
+        t.timestamp.year == targetMonth.year &&
+        t.timestamp.month == targetMonth.month)
+        .fold(0.0, (sum, t) => sum + t.amount);
+  }
+
+  // Get spending by shop
+  Map<String, double> getSpendingByShop() {
+    final spendingMap = <String, double>{};
+
+    for (final transaction in _transactions) {
+      if (transaction.type == TransactionType.debit) {
+        spendingMap[transaction.shopId] =
+            (spendingMap[transaction.shopId] ?? 0) + transaction.amount;
+      }
+    }
+
+    return spendingMap;
+  }
+
+  // Search transactions
+  List<FirebaseTransactionModel> searchTransactions(String query) {
+    if (query.isEmpty) return _transactions;
+
+    return _transactions.where((t) {
+      return t.description.toLowerCase().contains(query.toLowerCase()) ||
+          t.id.toLowerCase().contains(query.toLowerCase());
+    }).toList();
   }
 
   // Refresh data
@@ -377,8 +509,7 @@ class CustomerViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
-    // Clean up subscriptions
-    supabase.removeAllChannels();
+    // Firestore listeners are automatically cleaned up
     super.dispose();
   }
 }

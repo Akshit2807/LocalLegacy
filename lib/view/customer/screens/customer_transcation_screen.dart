@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../viewmodel/customer_viewmodel.dart';
 import '../../../viewmodel/auth_viewmodel.dart';
-import '../../../core/models/customer_shop_relation_model.dart';
+import '../../../core/models/firebase_customer_shop_relation_model.dart';
 
 class CustomerTransactionsScreen extends StatefulWidget {
   @override
@@ -223,11 +223,11 @@ class _CustomerTransactionsScreenState extends State<CustomerTransactionsScreen>
     );
   }
 
-  double _getTotalAmount(List<TransactionModel> transactions) {
+  double _getTotalAmount(List<FirebaseTransactionModel> transactions) {
     return transactions.fold(0.0, (sum, t) => sum + t.amount);
   }
 
-  double _getMonthlyAmount(List<TransactionModel> transactions) {
+  double _getMonthlyAmount(List<FirebaseTransactionModel> transactions) {
     final now = DateTime.now();
     final thisMonth = DateTime(now.year, now.month);
     return transactions
@@ -291,7 +291,7 @@ class _SummaryCard extends StatelessWidget {
 }
 
 class _TransactionsList extends StatelessWidget {
-  final List<TransactionModel> transactions;
+  final List<FirebaseTransactionModel> transactions;
   final String emptyMessage;
   final String emptySubtitle;
 
@@ -397,8 +397,8 @@ class _TransactionsList extends StatelessWidget {
     );
   }
 
-  List<Map<String, dynamic>> _groupTransactionsByDate(List<TransactionModel> transactions) {
-    final grouped = <String, List<TransactionModel>>{};
+  List<Map<String, dynamic>> _groupTransactionsByDate(List<FirebaseTransactionModel> transactions) {
+    final grouped = <String, List<FirebaseTransactionModel>>{};
 
     for (final transaction in transactions) {
       final dateKey = _formatDateGroup(transaction.timestamp);
@@ -435,7 +435,7 @@ class _TransactionsList extends StatelessWidget {
 }
 
 class _TransactionTile extends StatelessWidget {
-  final TransactionModel transaction;
+  final FirebaseTransactionModel transaction;
 
   const _TransactionTile({required this.transaction});
 

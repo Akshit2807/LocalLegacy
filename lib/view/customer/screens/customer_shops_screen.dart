@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../viewmodel/auth_viewmodel.dart';
 import '../../../viewmodel/customer_viewmodel.dart';
-import '../../../core/models/customer_shop_relation_model.dart';
+import '../../../core/models/firebase_customer_shop_relation_model.dart';
 
 class CustomerShopsScreen extends StatefulWidget {
   final VoidCallback? onScanQRPressed;
@@ -162,7 +162,7 @@ class _CustomerShopsScreenState extends State<CustomerShopsScreen>
 }
 
 class _ActiveShopsTab extends StatelessWidget {
-  final List<CustomerShopRelation> shops;
+  final List<FirebaseCustomerShopRelation> shops;
   final CustomerViewModel customerViewModel;
   final VoidCallback? onScanQRPressed;
 
@@ -205,7 +205,7 @@ class _ActiveShopsTab extends StatelessWidget {
     );
   }
 
-  void _showShopDetails(BuildContext context, CustomerShopRelation shop, CustomerViewModel customerViewModel) {
+  void _showShopDetails(BuildContext context, FirebaseCustomerShopRelation shop, CustomerViewModel customerViewModel) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -227,7 +227,7 @@ class _ActiveShopsTab extends StatelessWidget {
 }
 
 class _PendingShopsTab extends StatelessWidget {
-  final List<CustomerShopRelation> shops;
+  final List<FirebaseCustomerShopRelation> shops;
 
   const _PendingShopsTab({required this.shops});
 
@@ -253,7 +253,7 @@ class _PendingShopsTab extends StatelessWidget {
 }
 
 class _ActiveShopCard extends StatelessWidget {
-  final CustomerShopRelation shop;
+  final FirebaseCustomerShopRelation shop;
   final VoidCallback onTap;
 
   const _ActiveShopCard({
@@ -509,7 +509,7 @@ class _ActiveShopCard extends StatelessWidget {
 }
 
 class _PendingShopCard extends StatelessWidget {
-  final CustomerShopRelation shop;
+  final FirebaseCustomerShopRelation shop;
 
   const _PendingShopCard({required this.shop});
 
@@ -643,7 +643,7 @@ class _CreditInfoItem extends StatelessWidget {
 }
 
 class _ShopDetailsSheet extends StatelessWidget {
-  final CustomerShopRelation shop;
+  final FirebaseCustomerShopRelation shop;
   final CustomerViewModel customerViewModel;
   final ScrollController scrollController;
 
