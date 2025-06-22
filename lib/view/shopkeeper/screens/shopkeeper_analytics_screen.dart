@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../viewmodel/shop_viewmodel.dart';
-import '../../../core/models/customer_shop_relation_model.dart';
+import '../../../core/models/firebase_customer_shop_relation_model.dart';
 
 class ShopkeeperAnalyticsScreen extends StatefulWidget {
   @override

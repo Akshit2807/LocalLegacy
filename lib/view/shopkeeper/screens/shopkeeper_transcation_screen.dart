@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../viewmodel/shop_viewmodel.dart';
-import '../../../core/models/customer_shop_relation_model.dart';
+import '../../../core/models/firebase_customer_shop_relation_model.dart';
 
 class ShopkeeperTransactionsScreen extends StatefulWidget {
   @override
@@ -223,7 +223,7 @@ class _ShopkeeperTransactionsScreenState extends State<ShopkeeperTransactionsScr
     );
   }
 
-  double _getTodayAmount(List<TransactionModel> transactions) {
+  double _getTodayAmount(List<FirebaseTransactionModel> transactions) {
     final today = DateTime.now();
     return transactions
         .where((t) =>
@@ -289,7 +289,7 @@ class _TransactionStatCard extends StatelessWidget {
 }
 
 class _TransactionsList extends StatelessWidget {
-  final List<TransactionModel> transactions;
+  final List<FirebaseTransactionModel> transactions;
   final String emptyMessage;
 
   const _TransactionsList({
@@ -376,8 +376,8 @@ class _TransactionsList extends StatelessWidget {
     );
   }
 
-  List<Map<String, dynamic>> _groupTransactionsByDate(List<TransactionModel> transactions) {
-    final grouped = <String, List<TransactionModel>>{};
+  List<Map<String, dynamic>> _groupTransactionsByDate(List<FirebaseTransactionModel> transactions) {
+    final grouped = <String, List<FirebaseTransactionModel>>{};
 
     for (final transaction in transactions) {
       final dateKey = _formatDateGroup(transaction.timestamp);
@@ -414,7 +414,7 @@ class _TransactionsList extends StatelessWidget {
 }
 
 class _TransactionTile extends StatelessWidget {
-  final TransactionModel transaction;
+  final FirebaseTransactionModel transaction;
 
   const _TransactionTile({required this.transaction});
 

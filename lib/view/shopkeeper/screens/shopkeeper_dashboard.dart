@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -5,7 +7,7 @@ import 'package:local_legacy/view/shopkeeper/screens/shopkeeper_transcation_scre
 import 'package:provider/provider.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../../../core/models/customer_shop_relation_model.dart';
+import '../../../core/models/firebase_customer_shop_relation_model.dart';
 import '../../../viewmodel/auth_viewmodel.dart';
 import '../../../viewmodel/shop_viewmodel.dart';
 import '../../auth/screens/user_type_section_screen.dart';
@@ -177,7 +179,7 @@ class _DashboardTab extends StatelessWidget {
                 padding: const EdgeInsets.all(24),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
-                    // QR Code Section
+                    // QR Code Section - UPDATED VERSION
                     _QRCodeSection(shopViewModel: shopViewModel),
                     const SizedBox(height: 24),
 
@@ -245,6 +247,9 @@ class _DashboardTab extends StatelessWidget {
   }
 }
 
+// REPLACE THIS ENTIRE CLASS WITH THE UPDATED VERSION
+// Updated _QRCodeSection for shopkeeper_dashboard.dart
+
 class _QRCodeSection extends StatelessWidget {
   final ShopViewModel shopViewModel;
 
@@ -277,13 +282,26 @@ class _QRCodeSection extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Shop QR Code',
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.white,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Shop QR Code',
+                    style: GoogleFonts.poppins(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.white,
+                    ),
+                  ),
+                  if (shopViewModel.currentShop != null)
+                    Text(
+                      shopViewModel.currentShop!.shopName,
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: AppColors.white.withOpacity(0.9),
+                      ),
+                    ),
+                ],
               ),
               IconButton(
                 onPressed: () => _showQRDialog(context),
@@ -295,21 +313,17 @@ class _QRCodeSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
+
+          // QR Code Display with Error Handling
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: AppColors.white,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: shopViewModel.currentShop != null
-                ? PrettyQr(
-              data: shopViewModel.currentShop!.qrCode,
-              size: 150,
-              roundEdges: true,
-              elementColor: AppColors.darkGray,
-            )
-                : const CircularProgressIndicator(),
+            child: _buildQRCodeWidget(),
           ),
+
           const SizedBox(height: 16),
           Text(
             'Customers can scan this QR to make payments',
@@ -320,23 +334,157 @@ class _QRCodeSection extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 12),
-          ElevatedButton.icon(
-            onPressed: shopViewModel.currentShop != null
-                ? () => _shareQRCode(context)
-                : null,
-            icon: const Icon(Icons.share, size: 18),
-            label: const Text('Share QR'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.white,
-              foregroundColor: AppColors.primaryGreen,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(25),
+
+          // Enhanced Action Buttons
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: shopViewModel.currentShop != null
+                      ? () => _shareQRCode(context)
+                      : null,
+                  icon: const Icon(Icons.share, size: 18),
+                  label: const Text('Share QR'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.white,
+                    foregroundColor: AppColors.primaryGreen,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(25),
+                    ),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: shopViewModel.currentShop != null
+                      ? () => _copyQRData(context)
+                      : null,
+                  icon: const Icon(Icons.copy, size: 18),
+                  label: const Text('Copy'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.white,
+                    side: const BorderSide(color: AppColors.white),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(25),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildQRCodeWidget() {
+    // Show loading if shop is not initialized
+    if (shopViewModel.currentShop == null) {
+      return Container(
+        width: 150,
+        height: 150,
+        child: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryGreen),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Generating QR...',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.mediumGray,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Generate QR data for the shop
+    final qrData = _generateQRData();
+
+    print('Generated QR Data: $qrData');
+    print('QR Data Length: ${qrData.length}');
+
+    // Use PrettyQrView.data() to generate QR code
+    try {
+      return Container(
+        width: 150,
+        height: 150,
+        child: PrettyQrView.data(
+          data: qrData,
+          decoration: const PrettyQrDecoration(
+            shape: PrettyQrSmoothSymbol(),
+            image: null,
+          ),
+        ),
+      );
+    } catch (e) {
+      print('QR Code generation error: $e');
+
+      return Container(
+        width: 150,
+        height: 150,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.qr_code_2,
+                color: AppColors.error,
+                size: 40,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'QR Generation\nFailed',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: AppColors.error,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              ElevatedButton(
+                onPressed: () => shopViewModel.refresh(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                ),
+                child: Text(
+                  'Retry',
+                  style: GoogleFonts.poppins(fontSize: 10, color: AppColors.white),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+  }
+
+  // Generate clean QR data
+  String _generateQRData() {
+    if (shopViewModel.currentShop == null) {
+      return 'SHOP_NOT_FOUND';
+    }
+
+    final shop = shopViewModel.currentShop!;
+
+    // Create simple JSON data for QR
+    final qrData = {
+      'type': 'local_legacy_shop',
+      'shop_id': shop.id,
+      'shop_name': shop.shopName,
+      'shopkeeper_id': shop.shopkeeperId,
+      'version': '1.0',
+    };
+
+    return json.encode(qrData);
   }
 
   void _showQRDialog(BuildContext context) {
@@ -345,19 +493,77 @@ class _QRCodeSection extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(
-          'Shop QR Code',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-          textAlign: TextAlign.center,
+        title: Column(
+          children: [
+            Text(
+              shopViewModel.currentShop!.shopName,
+              style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            Text(
+              'Payment QR Code',
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                color: AppColors.mediumGray,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
         content: Container(
           width: 300,
-          height: 300,
-          child: PrettyQr(
-            data: shopViewModel.currentShop!.qrCode,
-            size: 280,
-            roundEdges: true,
-            elementColor: AppColors.darkGray,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 280,
+                height: 280,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.lightGray),
+                ),
+                child: _buildLargeQRCode(),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.lightGray,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'Shop Details',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.darkGray,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'ID: ${shopViewModel.currentShop!.id}',
+                      style: GoogleFonts.poppins(
+                        fontSize: 10,
+                        color: AppColors.mediumGray,
+                      ),
+                    ),
+                    if (shopViewModel.currentShop!.address.isNotEmpty)
+                      Text(
+                        shopViewModel.currentShop!.address,
+                        style: GoogleFonts.poppins(
+                          fontSize: 10,
+                          color: AppColors.mediumGray,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
         actions: [
@@ -365,32 +571,193 @@ class _QRCodeSection extends StatelessWidget {
             onPressed: () => Navigator.pop(context),
             child: Text(
               'Close',
-              style: GoogleFonts.poppins(color: AppColors.primaryGreen),
+              style: GoogleFonts.poppins(color: AppColors.mediumGray),
             ),
           ),
-          ElevatedButton(
-            onPressed: () => _shareQRCode(context),
-            child: const Text('Share'),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              _shareQRCode(context);
+            },
+            icon: const Icon(Icons.share, size: 16),
+            label: const Text('Share'),
           ),
         ],
       ),
     );
   }
 
+  Widget _buildLargeQRCode() {
+    if (shopViewModel.currentShop == null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.qr_code_2,
+              size: 100,
+              color: AppColors.mediumGray,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'QR Code Not Available',
+              style: GoogleFonts.poppins(
+                color: AppColors.mediumGray,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final qrData = _generateQRData();
+
+    try {
+      return Container(
+        width: 248,
+        height: 248,
+        child: PrettyQrView.data(
+          data: qrData,
+          decoration: const PrettyQrDecoration(
+            shape: PrettyQrSmoothSymbol(),
+            image: null,
+          ),
+        ),
+      );
+    } catch (e) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              color: AppColors.error,
+              size: 60,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to display QR code',
+              style: GoogleFonts.poppins(
+                color: AppColors.error,
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
   void _shareQRCode(BuildContext context) {
-    // Implementation for sharing QR code
+    if (shopViewModel.currentShop == null) return;
+
+    final qrData = _generateQRData();
+    final shareText = '''
+🏪 ${shopViewModel.currentShop!.shopName}
+
+📱 Scan this QR code to make payments at our shop!
+
+Shop Details:
+📍 ${shopViewModel.currentShop!.address.isNotEmpty ? shopViewModel.currentShop!.address : 'Address not set'}
+🆔 Shop ID: ${shopViewModel.currentShop!.id}
+
+💳 Easy credit-based payments
+🔒 Secure transactions
+⚡ Instant processing
+
+QR Data: $qrData
+
+Powered by Local Legacy
+    ''';
+
+    // For demo purposes, show share dialog
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Share QR Code',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Share this information with your customers:',
+              style: GoogleFonts.poppins(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.lightGray,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                shareText,
+                style: GoogleFonts.poppins(fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              _copyQRData(context);
+            },
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('Copy Text'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _copyQRData(BuildContext context) {
+    if (shopViewModel.currentShop == null) return;
+
+    final qrData = _generateQRData();
+    final shareText = '''🏪 ${shopViewModel.currentShop!.shopName}
+
+📱 Scan this QR code to make payments!
+📍 ${shopViewModel.currentShop!.address.isNotEmpty ? shopViewModel.currentShop!.address : 'Address not set'}
+🆔 ${shopViewModel.currentShop!.id}
+
+QR Data: $qrData
+
+Powered by Local Legacy''';
+
+    Clipboard.setData(ClipboardData(text: shareText));
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          'QR Code sharing feature coming soon!',
-          style: GoogleFonts.poppins(),
+        content: Row(
+          children: [
+            Icon(Icons.check_circle, color: AppColors.white, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              'Shop details copied to clipboard!',
+              style: GoogleFonts.poppins(),
+            ),
+          ],
         ),
-        backgroundColor: AppColors.primaryGreen,
+        backgroundColor: AppColors.success,
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
 }
 
+
+
+// Keep the rest of your existing widgets as they are
 class _QuickStatsSection extends StatelessWidget {
   final ShopViewModel shopViewModel;
 
@@ -654,7 +1021,7 @@ class _RecentActivitySection extends StatelessWidget {
 }
 
 class _TransactionTile extends StatelessWidget {
-  final TransactionModel transaction;
+  final FirebaseTransactionModel transaction;
 
   const _TransactionTile({required this.transaction});
 

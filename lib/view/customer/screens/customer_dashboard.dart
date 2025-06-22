@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import '../../../../core/theme/app_theme.dart';
-import '../../../core/models/customer_shop_relation_model.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../core/models/firebase_customer_shop_relation_model.dart';
 import '../../../viewmodel/auth_viewmodel.dart';
 import '../../../viewmodel/customer_viewmodel.dart';
 import '../../auth/screens/user_type_section_screen.dart';
@@ -706,7 +706,7 @@ class _RecentActivitySection extends StatelessWidget {
 }
 
 class _TransactionTile extends StatelessWidget {
-  final TransactionModel transaction;
+  final FirebaseTransactionModel transaction;
 
   const _TransactionTile({required this.transaction});
 

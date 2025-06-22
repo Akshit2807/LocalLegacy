@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../viewmodel/shop_viewmodel.dart';
-import '../../../core/models/customer_shop_relation_model.dart';
+import '../../../core/models/firebase_customer_shop_relation_model.dart';
 
 class ShopkeeperCustomersScreen extends StatefulWidget {
   @override
@@ -216,7 +216,7 @@ class _ShopkeeperCustomersScreenState extends State<ShopkeeperCustomersScreen>
 }
 
 class _PendingCustomersTab extends StatelessWidget {
-  final List<CustomerShopRelation> customers;
+  final List<FirebaseCustomerShopRelation> customers;
   final ShopViewModel shopViewModel;
 
   const _PendingCustomersTab({
@@ -248,7 +248,7 @@ class _PendingCustomersTab extends StatelessWidget {
     );
   }
 
-  void _showAcceptDialog(BuildContext context, CustomerShopRelation customer) {
+  void _showAcceptDialog(BuildContext context, FirebaseCustomerShopRelation customer) {
     final creditController = TextEditingController();
     DateTime selectedDate = DateTime.now().add(const Duration(days: 30));
 
@@ -324,7 +324,7 @@ class _PendingCustomersTab extends StatelessWidget {
     );
   }
 
-  void _showRejectDialog(BuildContext context, CustomerShopRelation customer) {
+  void _showRejectDialog(BuildContext context, FirebaseCustomerShopRelation customer) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -365,7 +365,7 @@ class _PendingCustomersTab extends StatelessWidget {
 }
 
 class _ActiveCustomersTab extends StatelessWidget {
-  final List<CustomerShopRelation> customers;
+  final List<FirebaseCustomerShopRelation> customers;
   final ShopViewModel shopViewModel;
 
   const _ActiveCustomersTab({
@@ -397,7 +397,7 @@ class _ActiveCustomersTab extends StatelessWidget {
     );
   }
 
-  void _showEditDialog(BuildContext context, CustomerShopRelation customer) {
+  void _showEditDialog(BuildContext context, FirebaseCustomerShopRelation customer) {
     final creditController = TextEditingController(
       text: customer.totalCreditLimit.toString(),
     );
@@ -449,7 +449,7 @@ class _ActiveCustomersTab extends StatelessWidget {
     );
   }
 
-  void _showCustomerDetails(BuildContext context, CustomerShopRelation customer) {
+  void _showCustomerDetails(BuildContext context, FirebaseCustomerShopRelation customer) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -627,7 +627,7 @@ class _ActiveCustomersTab extends StatelessWidget {
 }
 
 class _OverdueCustomersTab extends StatelessWidget {
-  final List<CustomerShopRelation> customers;
+  final List<FirebaseCustomerShopRelation> customers;
   final ShopViewModel shopViewModel;
 
   const _OverdueCustomersTab({
@@ -659,7 +659,7 @@ class _OverdueCustomersTab extends StatelessWidget {
     );
   }
 
-  void _contactCustomer(BuildContext context, CustomerShopRelation customer) {
+  void _contactCustomer(BuildContext context, FirebaseCustomerShopRelation customer) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Contact feature coming soon!'),
@@ -670,7 +670,7 @@ class _OverdueCustomersTab extends StatelessWidget {
 }
 
 class _PendingCustomerCard extends StatelessWidget {
-  final CustomerShopRelation customer;
+  final FirebaseCustomerShopRelation customer;
   final VoidCallback onAccept;
   final VoidCallback onReject;
 
@@ -778,7 +778,7 @@ class _PendingCustomerCard extends StatelessWidget {
 }
 
 class _ActiveCustomerCard extends StatelessWidget {
-  final CustomerShopRelation customer;
+  final FirebaseCustomerShopRelation customer;
   final VoidCallback onEdit;
   final VoidCallback onViewDetails;
 
@@ -885,7 +885,7 @@ class _ActiveCustomerCard extends StatelessWidget {
 }
 
 class _OverdueCustomerCard extends StatelessWidget {
-  final CustomerShopRelation customer;
+  final FirebaseCustomerShopRelation customer;
   final VoidCallback onContact;
 
   const _OverdueCustomerCard({

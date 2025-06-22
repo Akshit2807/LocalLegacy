@@ -1,15 +1,16 @@
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import '../core/config/firebase_config.dart';
 import '../core/models/user_model.dart';
-import '../core/config/supabase_config.dart';
 
 class AuthViewModel extends ChangeNotifier {
-  UserModel? _user;
+  FirebaseUserModel? _user;
   bool _isLoading = false;
   String? _errorMessage;
 
-  UserModel? get user => _user;
+  FirebaseUserModel? get user => _user;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   bool get isAuthenticated => _user != null;
@@ -24,7 +25,7 @@ class AuthViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _setUser(UserModel? user) {
+  void _setUser(FirebaseUserModel? user) {
     _user = user;
     notifyListeners();
   }
@@ -32,17 +33,30 @@ class AuthViewModel extends ChangeNotifier {
   // Initialize auth state
   Future<void> initializeAuth() async {
     try {
-      final session = supabase.auth.currentSession;
-      if (session != null) {
-        // Get user profile from custom table
-        final userProfile = await _getUserProfile(session.user.id);
-        if (userProfile != null) {
-          _setUser(UserModel.fromJson({
-            ...session.user.toJson(),
-            ...userProfile,
-          }));
+      final firebaseUser = FirebaseConfig.auth.currentUser;
+      if (firebaseUser != null) {
+        // Get user profile from Firestore
+        final userDoc = await FirebaseConfig.usersCollection
+            .doc(firebaseUser.uid)
+            .get();
+
+        if (userDoc.exists) {
+          _setUser(FirebaseUserModel.fromFirestore(userDoc));
         } else {
-          _setUser(UserModel.fromJson(session.user.toJson()));
+          // Create user profile if doesn't exist
+          final userData = FirebaseUserModel(
+            id: firebaseUser.uid,
+            email: firebaseUser.email ?? '',
+            name: firebaseUser.displayName,
+            userType: 'customer', // Default
+            isEmailVerified: firebaseUser.emailVerified,
+          );
+
+          await FirebaseConfig.usersCollection
+              .doc(firebaseUser.uid)
+              .set(userData.toFirestore());
+
+          _setUser(userData);
         }
       }
     } catch (e) {
@@ -57,35 +71,44 @@ class AuthViewModel extends ChangeNotifier {
 
     try {
       // FIRST: Check if email already exists with different user type
-      final existingProfile = await _getUserProfileByEmail(email);
-      if (existingProfile != null) {
-        _setError('An account with this email already exists as ${existingProfile['user_type']}. Please use a different email or login with the correct user type.');
-        _setLoading(false);
-        return false;
+      final existingUserQuery = await FirebaseConfig.usersCollection
+          .where('email', isEqualTo: email)
+          .get();
+
+      if (existingUserQuery.docs.isNotEmpty) {
+        final existingUser = FirebaseUserModel.fromFirestore(existingUserQuery.docs.first);
+        if (existingUser.userType != userType) {
+          _setError('An account with this email already exists as ${existingUser.userType}. Please use a different email or login with the correct user type.');
+          _setLoading(false);
+          return false;
+        }
       }
 
-      final response = await supabase.auth.signUp(
+      // Create Firebase Auth user
+      final credential = await FirebaseConfig.auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
-        data: {
-          'name': name,
-          'user_type': userType,
-        },
-        emailRedirectTo: null, // Disable email confirmation
       );
 
-      if (response.user != null) {
-        // Create user profile in your custom table with user type
-        await _createUserProfile(response.user!.id, name, email, userType);
+      if (credential.user != null) {
+        // Update display name
+        await credential.user!.updateDisplayName(name);
 
-        _setUser(UserModel(
-          id: response.user!.id,
+        // Create user profile in Firestore
+        final userData = FirebaseUserModel(
+          id: credential.user!.uid,
           email: email,
           name: name,
           userType: userType,
-          isEmailVerified: true,
-        ));
+          isEmailVerified: true, // BYPASS email verification
+          createdAt: DateTime.now(),
+        );
 
+        await FirebaseConfig.usersCollection
+            .doc(credential.user!.uid)
+            .set(userData.toFirestore());
+
+        _setUser(userData);
         _setLoading(false);
         return true;
       } else {
@@ -93,11 +116,19 @@ class AuthViewModel extends ChangeNotifier {
         _setLoading(false);
         return false;
       }
-    } on AuthException catch (e) {
-      if (e.message.contains('User already registered')) {
-        _setError('An account with this email already exists. Please login instead.');
-      } else {
-        _setError(e.message);
+    } on FirebaseAuthException catch (e) {
+      switch (e.code) {
+        case 'email-already-in-use':
+          _setError('An account with this email already exists. Please login instead.');
+          break;
+        case 'weak-password':
+          _setError('The password is too weak. Please use at least 6 characters.');
+          break;
+        case 'invalid-email':
+          _setError('Please enter a valid email address.');
+          break;
+        default:
+          _setError(e.message ?? 'Sign up failed');
       }
       _setLoading(false);
       return false;
@@ -114,39 +145,36 @@ class AuthViewModel extends ChangeNotifier {
     _setError(null);
 
     try {
-      final response = await supabase.auth.signInWithPassword(
+      // Sign in with Firebase Auth
+      final credential = await FirebaseConfig.auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      if (response.user != null) {
-        // Get user profile from your custom table
-        final userProfile = await _getUserProfile(response.user!.id);
+      if (credential.user != null) {
+        // Get user profile from Firestore
+        final userDoc = await FirebaseConfig.usersCollection
+            .doc(credential.user!.uid)
+            .get();
 
-        if (userProfile == null) {
+        if (!userDoc.exists) {
+          await FirebaseConfig.auth.signOut();
           _setError('User profile not found. Please contact support.');
           _setLoading(false);
           return false;
         }
 
+        final userData = FirebaseUserModel.fromFirestore(userDoc);
+
         // VALIDATE USER TYPE
-        final profileUserType = userProfile['user_type'];
-        if (profileUserType != userType) {
-          // Sign out the user since they logged in with wrong type
-          await supabase.auth.signOut();
-          _setError('This email is registered as $profileUserType. Please select the correct user type or use a different email.');
+        if (userData.userType != userType) {
+          await FirebaseConfig.auth.signOut();
+          _setError('This email is registered as ${userData.userType}. Please select the correct user type or use a different email.');
           _setLoading(false);
           return false;
         }
 
-        _setUser(UserModel(
-          id: response.user!.id,
-          email: email,
-          name: userProfile['name'] ?? response.user!.userMetadata?['name'],
-          userType: profileUserType,
-          isEmailVerified: true,
-        ));
-
+        _setUser(userData);
         _setLoading(false);
         return true;
       } else {
@@ -154,11 +182,21 @@ class AuthViewModel extends ChangeNotifier {
         _setLoading(false);
         return false;
       }
-    } on AuthException catch (e) {
-      if (e.message.contains('Invalid login credentials')) {
-        _setError('Invalid email or password. Please check your credentials.');
-      } else {
-        _setError(e.message);
+    } on FirebaseAuthException catch (e) {
+      switch (e.code) {
+        case 'user-not-found':
+        case 'wrong-password':
+        case 'invalid-credential':
+          _setError('Invalid email or password. Please check your credentials.');
+          break;
+        case 'user-disabled':
+          _setError('This account has been disabled. Please contact support.');
+          break;
+        case 'too-many-requests':
+          _setError('Too many failed attempts. Please try again later.');
+          break;
+        default:
+          _setError(e.message ?? 'Login failed');
       }
       _setLoading(false);
       return false;
@@ -175,76 +213,60 @@ class AuthViewModel extends ChangeNotifier {
     _setError(null);
 
     try {
-      const webClientId = 'YOUR_GOOGLE_WEB_CLIENT_ID'; // Replace with your Google Web Client ID
-      const iosClientId = 'YOUR_GOOGLE_IOS_CLIENT_ID'; // Replace with your Google iOS Client ID
-
       final GoogleSignIn googleSignIn = GoogleSignIn(
-        clientId: iosClientId,
-        serverClientId: webClientId,
+        scopes: ['email', 'profile'],
       );
 
-      final googleUser = await googleSignIn.signIn();
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
       if (googleUser == null) {
         _setLoading(false);
-        return false;
+        return false; // User cancelled
       }
 
-      final googleAuth = await googleUser.authentication;
-      final accessToken = googleAuth.accessToken;
-      final idToken = googleAuth.idToken;
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
 
-      if (accessToken == null) {
-        _setError('No access token found');
-        _setLoading(false);
-        return false;
-      }
-      if (idToken == null) {
-        _setError('No ID token found');
-        _setLoading(false);
-        return false;
-      }
-
-      final response = await supabase.auth.signInWithIdToken(
-        provider: OAuthProvider.google,
-        idToken: idToken,
-        accessToken: accessToken,
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
       );
 
-      if (response.user != null) {
-        // Check if user profile exists
-        final userProfile = await _getUserProfile(response.user!.id);
+      final authResult = await FirebaseConfig.auth.signInWithCredential(credential);
 
-        if (userProfile == null) {
+      if (authResult.user != null) {
+        // Check if user profile exists
+        final userDoc = await FirebaseConfig.usersCollection
+            .doc(authResult.user!.uid)
+            .get();
+
+        if (!userDoc.exists) {
           // First time Google sign in - create profile with selected user type
-          await _createUserProfile(
-              response.user!.id,
-              googleUser.displayName ?? 'Google User',
-              response.user!.email!,
-              userType
+          final userData = FirebaseUserModel(
+            id: authResult.user!.uid,
+            email: authResult.user!.email!,
+            name: authResult.user!.displayName ?? googleUser.displayName,
+            userType: userType,
+            isEmailVerified: authResult.user!.emailVerified,
+            avatarUrl: authResult.user!.photoURL,
+            createdAt: DateTime.now(),
           );
+
+          await FirebaseConfig.usersCollection
+              .doc(authResult.user!.uid)
+              .set(userData.toFirestore());
+
+          _setUser(userData);
         } else {
           // Validate user type for existing Google users
-          final profileUserType = userProfile['user_type'];
-          if (profileUserType != userType) {
-            await supabase.auth.signOut();
-            _setError('This Google account is registered as $profileUserType. Please select the correct user type.');
+          final userData = FirebaseUserModel.fromFirestore(userDoc);
+          if (userData.userType != userType) {
+            await FirebaseConfig.auth.signOut();
+            await googleSignIn.signOut();
+            _setError('This Google account is registered as ${userData.userType}. Please select the correct user type.');
             _setLoading(false);
             return false;
           }
+          _setUser(userData);
         }
-
-        final finalUserProfile = userProfile ?? {
-          'name': googleUser.displayName,
-          'user_type': userType,
-        };
-
-        _setUser(UserModel(
-          id: response.user!.id,
-          email: response.user!.email!,
-          name: googleUser.displayName ?? finalUserProfile['name'],
-          userType: finalUserProfile['user_type'],
-          isEmailVerified: true,
-        ));
 
         _setLoading(false);
         return true;
@@ -253,7 +275,13 @@ class AuthViewModel extends ChangeNotifier {
         _setLoading(false);
         return false;
       }
+    } on FirebaseAuthException catch (e) {
+      await GoogleSignIn().signOut();
+      _setError('Google sign in failed: ${e.message}');
+      _setLoading(false);
+      return false;
     } catch (e) {
+      await GoogleSignIn().signOut();
       _setError('Google sign in failed: $e');
       _setLoading(false);
       return false;
@@ -266,14 +294,20 @@ class AuthViewModel extends ChangeNotifier {
     _setError(null);
 
     try {
-      await supabase.auth.resetPasswordForEmail(
-        email,
-        redirectTo: 'io.supabase.locallegacy://reset-password/',
-      );
+      await FirebaseConfig.auth.sendPasswordResetEmail(email: email);
       _setLoading(false);
       return true;
-    } on AuthException catch (e) {
-      _setError(e.message);
+    } on FirebaseAuthException catch (e) {
+      switch (e.code) {
+        case 'user-not-found':
+          _setError('No account found with this email address.');
+          break;
+        case 'invalid-email':
+          _setError('Please enter a valid email address.');
+          break;
+        default:
+          _setError(e.message ?? 'Failed to send reset email');
+      }
       _setLoading(false);
       return false;
     } catch (e) {
@@ -291,6 +325,11 @@ class AuthViewModel extends ChangeNotifier {
     await Future.delayed(const Duration(seconds: 1));
 
     if (_user != null) {
+      // Update user as verified in Firestore
+      await FirebaseConfig.usersCollection
+          .doc(_user!.id)
+          .update({'email_verified': true});
+
       _setUser(_user!.copyWith(isEmailVerified: true));
     }
     _setLoading(false);
@@ -311,81 +350,78 @@ class AuthViewModel extends ChangeNotifier {
   // Sign Out
   Future<void> signOut() async {
     try {
-      await supabase.auth.signOut();
+      await GoogleSignIn().signOut(); // Sign out from Google
+      await FirebaseConfig.auth.signOut();
       _setUser(null);
     } catch (e) {
       _setError('Sign out failed: $e');
     }
   }
 
-  // Helper method to create user profile
-  Future<void> _createUserProfile(String userId, String name, String email, String userType) async {
-    try {
-      await supabase.from('profiles').insert({
-        'id': userId,
-        'name': name,
-        'email': email,
-        'user_type': userType,
-        'created_at': DateTime.now().toIso8601String(),
-      });
-    } catch (e) {
-      print('Error creating user profile: $e');
-    }
-  }
-
-  // Helper method to get user profile by ID
-  Future<Map<String, dynamic>?> _getUserProfile(String userId) async {
-    try {
-      final response = await supabase
-          .from('profiles')
-          .select()
-          .eq('id', userId)
-          .maybeSingle();
-      return response;
-    } catch (e) {
-      print('Error getting user profile: $e');
-      return null;
-    }
-  }
-
-  // NEW: Helper method to get user profile by email
-  Future<Map<String, dynamic>?> _getUserProfileByEmail(String email) async {
-    try {
-      final response = await supabase
-          .from('profiles')
-          .select()
-          .eq('email', email)
-          .maybeSingle();
-      return response;
-    } catch (e) {
-      print('Error getting user profile by email: $e');
-      return null;
-    }
-  }
-
   // Listen to auth state changes
   void listenToAuthChanges() {
-    supabase.auth.onAuthStateChange.listen((data) {
-      final AuthChangeEvent event = data.event;
-      final Session? session = data.session;
+    FirebaseConfig.auth.authStateChanges().listen((User? firebaseUser) async {
+      if (firebaseUser != null) {
+        try {
+          final userDoc = await FirebaseConfig.usersCollection
+              .doc(firebaseUser.uid)
+              .get();
 
-      switch (event) {
-        case AuthChangeEvent.signedIn:
-          if (session?.user != null) {
-            _setUser(UserModel.fromJson(session!.user.toJson()));
+          if (userDoc.exists) {
+            _setUser(FirebaseUserModel.fromFirestore(userDoc));
           }
-          break;
-        case AuthChangeEvent.signedOut:
-          _setUser(null);
-          break;
-        case AuthChangeEvent.tokenRefreshed:
-          if (session?.user != null) {
-            _setUser(UserModel.fromJson(session!.user.toJson()));
-          }
-          break;
-        default:
-          break;
+        } catch (e) {
+          _setError('Failed to load user profile: $e');
+        }
+      } else {
+        _setUser(null);
       }
     });
+  }
+
+  // Update user profile
+  Future<bool> updateUserProfile({
+    String? name,
+    String? avatarUrl,
+    String? securityPin,
+  }) async {
+    if (_user == null) return false;
+
+    _setLoading(true);
+    _setError(null);
+
+    try {
+      final updates = <String, dynamic>{};
+
+      if (name != null) updates['name'] = name;
+      if (avatarUrl != null) updates['avatar_url'] = avatarUrl;
+      if (securityPin != null) updates['security_pin'] = securityPin;
+
+      if (updates.isNotEmpty) {
+        updates['updated_at'] = FieldValue.serverTimestamp();
+
+        await FirebaseConfig.usersCollection
+            .doc(_user!.id)
+            .update(updates);
+
+        _setUser(_user!.copyWith(
+          name: name ?? _user!.name,
+          avatarUrl: avatarUrl ?? _user!.avatarUrl,
+          securityPin: securityPin ?? _user!.securityPin,
+        ));
+      }
+
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError('Failed to update profile: $e');
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
   }
 }

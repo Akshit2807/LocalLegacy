@@ -1,43 +1,50 @@
 name: local_legacy
-description: An app connecting shopkeepers and customers
+description: A Flutter project for local business credit management.
+publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
-  flutter: ">=3.10.0"
+  sdk: '>=3.1.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.2
-  google_fonts: ^6.1.0
-  provider: ^6.1.1
-  http: ^1.1.0
-  shared_preferences: ^2.2.2
-  supabase_flutter: ^2.3.4
-  google_sign_in: ^6.1.6
-  pin_code_fields: ^8.0.1
-  flutter_svg: ^2.0.9
-  crypto: ^3.0.3
-  flutter_launcher_icons: ^0.14.3
 
-  pretty_qr_code: ^3.3.0       # QR Code generation
-  mobile_scanner: ^5.0.0       # QR Code scanning
-  permission_handler: ^11.3.1  # Camera permissions
+  # Firebase
+  firebase_core: ^2.24.2
+  firebase_auth: ^4.15.3
+  cloud_firestore: ^4.13.6
+  google_sign_in: ^6.1.5
+
+  # State Management
+  provider: ^6.1.1
+
+  # UI & Fonts
+  google_fonts: ^6.1.0
+
+  # QR Code
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^3.5.2
+  pretty_qr_code: ^3.0.0
+
+  # PIN Input
+  pin_code_fields: ^8.0.1
+
+  # Utils
+  crypto: ^3.0.3  # For base64 encoding/decoding
+  encrypt: ^5.0.3 # For encryption/decryption
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
-  flutter_launcher_icons: "^0.14.3"
+  flutter_launcher_icons: ^0.13.1
 
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/logo/Local_Legacy_logo_Earthy_Greens_and_Blues(2).png"
+  image_path: "assets/icon/icon.png"
+  min_sdk_android: 21
 
 flutter:
   uses-material-design: true
-  assets:
-    - assets/images/
-    - assets/icons/
