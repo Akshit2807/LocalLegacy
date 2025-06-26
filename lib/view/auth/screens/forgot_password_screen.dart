@@ -131,11 +131,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           child: ElevatedButton(
                             onPressed: authViewModel.isLoading ? null : () async {
                               if (_formKey.currentState!.validate()) {
-                                final success = await authViewModel.resetPassword(
+                                final result = await authViewModel.resetPassword(
                                   _emailController.text,
                                 );
 
-                                if (success) {
+                                if (result.isSuccess) {
                                   setState(() {
                                     _isEmailSent = true;
                                   });
@@ -181,9 +181,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           width: double.infinity,
                           child: OutlinedButton(
                             onPressed: authViewModel.isLoading ? null : () async {
-                              final success = await authViewModel.resetPassword(_emailController.text);
+                              final result = await authViewModel.resetPassword(_emailController.text);
 
-                              if (success && context.mounted) {
+                              if (result.isSuccess && context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text('Reset link sent again!'),

@@ -160,13 +160,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: ElevatedButton(
                           onPressed: authViewModel.isLoading ? null : () async {
                             if (_formKey.currentState!.validate()) {
-                              final success = await authViewModel.loginWithEmail(
-                                _emailController.text,
-                                _passwordController.text,
-                                widget.userType,
+                              final result = await authViewModel.loginWithEmail(
+                                email: _emailController.text,
+                                password: _passwordController.text,
+                                userType: widget.userType,
                               );
 
-                              if (success && context.mounted) {
+                              if (result.isSuccess && context.mounted) {
                                 // BYPASS OTP - Go directly to dashboard
                                 if (widget.userType == 'shopkeeper') {
                                   Navigator.pushAndRemoveUntil(
@@ -184,7 +184,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               } else if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text(authViewModel.errorMessage ?? 'Login failed'),
+                                    content: Text(result.message ?? authViewModel.errorMessage ?? 'Login failed'),
                                     backgroundColor: AppColors.error,
                                   ),
                                 );
@@ -226,9 +226,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         width: double.infinity,
                         child: OutlinedButton.icon(
                           onPressed: authViewModel.isLoading ? null : () async {
-                            final success = await authViewModel.signInWithGoogle(widget.userType);
+                            final result = await authViewModel.signInWithGoogle(userType: widget.userType);
 
-                            if (success && context.mounted) {
+                            if (result.isSuccess && context.mounted) {
                               // BYPASS OTP - Go directly to dashboard
                               if (widget.userType == 'shopkeeper') {
                                 Navigator.pushAndRemoveUntil(
@@ -246,7 +246,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             } else if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text(authViewModel.errorMessage ?? 'Google sign-in failed'),
+                                  content: Text(result.message ?? authViewModel.errorMessage ?? 'Google sign-in failed'),
                                   backgroundColor: AppColors.error,
                                 ),
                               );
@@ -316,3 +316,4 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
+

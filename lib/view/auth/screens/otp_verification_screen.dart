@@ -52,9 +52,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
   void _resendOtp() async {
     final authViewModel = Provider.of<AuthViewModel>(context, listen: false);
-    final success = await authViewModel.resendOtp(widget.email);
+    final result = await authViewModel.resendOtp(widget.email);
 
-    if (success) {
+    if (result.isSuccess) {
       setState(() {
         _secondsRemaining = 60;
         _canResend = false;
@@ -267,9 +267,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
   void _verifyOtp(String otp) async {
     final authViewModel = Provider.of<AuthViewModel>(context, listen: false);
-    final success = await authViewModel.verifyOtp(widget.email, otp);
+    final result = await authViewModel.verifyOtp(widget.email, otp);
 
-    if (success && context.mounted) {
+    if (result.isSuccess && context.mounted) {
       // Navigate to appropriate dashboard based on user type
       if (widget.userType == 'shopkeeper') {
         Navigator.pushAndRemoveUntil(

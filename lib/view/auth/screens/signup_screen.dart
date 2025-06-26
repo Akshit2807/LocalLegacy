@@ -113,7 +113,7 @@ class _SignupScreenState extends State<SignupScreen> {
                       if (value == null || value.isEmpty) {
                         return 'Please enter your email';
                       }
-                      if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                      if (!RegExp(r'^[\w\.\-]+@([\w\-]+\.)+[\w\-]{2,4}$').hasMatch(value)) {
                         return 'Please enter a valid email';
                       }
                       return null;
@@ -233,14 +233,14 @@ class _SignupScreenState extends State<SignupScreen> {
                         child: ElevatedButton(
                           onPressed: (_agreeToTerms && !authViewModel.isLoading) ? () async {
                             if (_formKey.currentState!.validate()) {
-                              final success = await authViewModel.signUpWithEmail(
-                                _nameController.text,
-                                _emailController.text,
-                                _passwordController.text,
-                                widget.userType,
+                              final result = await authViewModel.signUpWithEmail(
+                                name: _nameController.text,
+                                email: _emailController.text,
+                                password: _passwordController.text,
+                                userType: widget.userType,
                               );
 
-                              if (success && context.mounted) {
+                              if (result.isSuccess && context.mounted) {
                                 // BYPASS OTP - Go directly to dashboard
                                 if (widget.userType == 'shopkeeper') {
                                   Navigator.pushAndRemoveUntil(
@@ -258,7 +258,7 @@ class _SignupScreenState extends State<SignupScreen> {
                               } else if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text(authViewModel.errorMessage ?? 'Sign up failed'),
+                                    content: Text(result.message ?? authViewModel.errorMessage ?? 'Sign up failed'),
                                     backgroundColor: AppColors.error,
                                   ),
                                 );
@@ -300,9 +300,9 @@ class _SignupScreenState extends State<SignupScreen> {
                         width: double.infinity,
                         child: OutlinedButton.icon(
                           onPressed: (_agreeToTerms && !authViewModel.isLoading) ? () async {
-                            final success = await authViewModel.signInWithGoogle(widget.userType);
+                            final result = await authViewModel.signInWithGoogle(userType: widget.userType);
 
-                            if (success && context.mounted) {
+                            if (result.isSuccess && context.mounted) {
                               // BYPASS OTP - Go directly to dashboard
                               if (widget.userType == 'shopkeeper') {
                                 Navigator.pushAndRemoveUntil(
@@ -320,7 +320,7 @@ class _SignupScreenState extends State<SignupScreen> {
                             } else if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text(authViewModel.errorMessage ?? 'Google sign-up failed'),
+                                  content: Text(result.message ?? authViewModel.errorMessage ?? 'Google sign-up failed'),
                                   backgroundColor: AppColors.error,
                                 ),
                               );
@@ -383,3 +383,4 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 }
+
