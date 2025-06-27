@@ -11,6 +11,7 @@ import '../../../core/models/firebase_customer_shop_relation_model.dart';
 import '../../../viewmodel/auth_viewmodel.dart';
 import '../../../viewmodel/shop_viewmodel.dart';
 import '../../auth/screens/user_type_section_screen.dart';
+import 'customer_request_screen.dart';
 import 'shopkeeper_customers_screen.dart';
 import 'shopkeeper_analytics_screen.dart';
 
@@ -45,7 +46,8 @@ class _ShopkeeperDashboardState extends State<ShopkeeperDashboard> {
             index: _currentIndex,
             children: [
               _DashboardTab(shopViewModel: shopViewModel, authViewModel: authViewModel),
-              ShopkeeperCustomersScreen(),
+              // ShopkeeperCustomersScreen(),
+              EnhancedCustomerRequestsScreen(),
               ShopkeeperTransactionsScreen(),
               ShopkeeperAnalyticsScreen(),
             ],

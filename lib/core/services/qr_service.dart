@@ -1,157 +1,129 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
-import 'package:encrypt/encrypt.dart';
 
 class QRCodeService {
-  // Use a consistent encryption key for the app
-  static const String _encryptionKey = 'LocalLegacyApp2024SecureKey123'; // 32 chars
-  static final _key = Key.fromBase64(base64.encode(_encryptionKey.codeUnits.take(32).toList()));
-  static final _iv = IV.fromSecureRandom(16);
-  static final _encrypter = Encrypter(AES(_key));
-
-  /// Generate encrypted QR data for a shop
-  static String generateShopQRData({
-    required String shopId,
-    required String shopName,
-    required String shopkeeperId,
-    required String address,
-  }) {
+  /// Parse QR data from Local Legacy shop QR codes
+  static Map<String, dynamic>? parseShopQRData(String qrData) {
     try {
-      // Create shop data object
-      final shopData = {
-        'type': 'shop',
-        'shop_id': shopId,
-        'shop_name': shopName,
-        'shopkeeper_id': shopkeeperId,
-        'address': address,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-        'version': '1.0',
-      };
+      // Check if it's valid JSON format first
+      if (qrData.startsWith('{') && qrData.endsWith('}')) {
+        final data = json.decode(qrData) as Map<String, dynamic>;
 
-      // Convert to JSON string
-      final jsonString = json.encode(shopData);
+        // Validate Local Legacy shop QR structure
+        if (data['type'] == 'local_legacy_shop' &&
+            data.containsKey('shop_id') &&
+            data.containsKey('shop_name') &&
+            data.containsKey('shopkeeper_id')) {
+          return data;
+        }
+      }
 
-      // Encrypt the data
-      final encrypted = _encrypter.encrypt(jsonString, iv: _iv);
+      // Fallback: check for legacy format (if any)
+      if (qrData.startsWith('ll_shop_')) {
+        return _parseLegacyFormat(qrData);
+      }
 
-      // Create final QR data with prefix and encrypted content
-      final qrData = 'LL_SHOP:${base64.encode(_iv.bytes)}:${encrypted.base64}';
-
-      print('Generated QR Data: $qrData');
-      return qrData;
+      print('Invalid QR format: $qrData');
+      return null;
     } catch (e) {
-      print('Error generating QR data: $e');
-      throw Exception('Failed to generate QR code: $e');
-    }
-  }
-
-  /// Decrypt and parse shop QR data
-  static Map<String, dynamic>? decryptShopQRData(String qrData) {
-    try {
-      // Check if it's a valid Local Legacy shop QR
-      if (!qrData.startsWith('LL_SHOP:')) {
-        print('Invalid QR format: $qrData');
-        return null;
-      }
-
-      // Remove prefix and split data
-      final dataParts = qrData.substring(8).split(':'); // Remove 'LL_SHOP:'
-      if (dataParts.length != 2) {
-        print('Invalid QR data structure');
-        return null;
-      }
-
-      // Extract IV and encrypted data
-      final ivBytes = base64.decode(dataParts[0]);
-      final encryptedData = dataParts[1];
-
-      // Create IV from bytes
-      final iv = IV(ivBytes);
-
-      // Decrypt the data
-      final encrypted = Encrypted.fromBase64(encryptedData);
-      final decrypted = _encrypter.decrypt(encrypted, iv: iv);
-
-      // Parse JSON
-      final shopData = json.decode(decrypted) as Map<String, dynamic>;
-
-      // Validate data structure
-      if (!_validateShopData(shopData)) {
-        print('Invalid shop data structure');
-        return null;
-      }
-
-      print('Decrypted shop data: $shopData');
-      return shopData;
-    } catch (e) {
-      print('Error decrypting QR data: $e');
+      print('Error parsing QR data: $e');
       return null;
     }
   }
 
-  /// Validate shop data structure
-  static bool _validateShopData(Map<String, dynamic> data) {
-    final requiredFields = [
-      'type',
-      'shop_id',
-      'shop_name',
-      'shopkeeper_id',
-      'timestamp',
-      'version'
-    ];
+  /// Parse legacy QR format for backward compatibility
+  static Map<String, dynamic>? _parseLegacyFormat(String qrData) {
+    try {
+      if (!qrData.startsWith('ll_shop_')) return null;
 
+      final base64Data = qrData.substring(8); // Remove 'll_shop_' prefix
+      final jsonString = utf8.decode(base64.decode(base64Data));
+      final data = jsonDecode(jsonString) as Map<String, dynamic>;
+
+      return data;
+    } catch (e) {
+      print('Error parsing legacy QR: $e');
+      return null;
+    }
+  }
+
+  /// Generate QR data for shop (already used in shopkeeper dashboard)
+  static String generateShopQRData({
+    required String shopId,
+    required String shopName,
+    required String shopkeeperId,
+    String? address,
+  }) {
+    final qrData = {
+      'type': 'local_legacy_shop',
+      'shop_id': shopId,
+      'shop_name': shopName,
+      'shopkeeper_id': shopkeeperId,
+      'version': '1.0',
+      if (address != null && address.isNotEmpty) 'address': address,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    };
+
+    return json.encode(qrData);
+  }
+
+  /// Validate shop QR data structure
+  static bool isValidShopQR(String qrData) {
+    final data = parseShopQRData(qrData);
+    if (data == null) return false;
+
+    // Check required fields
+    final requiredFields = ['type', 'shop_id', 'shop_name', 'shopkeeper_id', 'version'];
     for (final field in requiredFields) {
       if (!data.containsKey(field) || data[field] == null) {
-        print('Missing required field: $field');
         return false;
       }
     }
 
-    // Check if it's a shop type
-    if (data['type'] != 'shop') {
-      print('Invalid QR type: ${data['type']}');
-      return false;
-    }
+    // Check if it's the correct type
+    if (data['type'] != 'local_legacy_shop') return false;
 
-    // Check timestamp (shouldn't be too old - 30 days)
-    final timestamp = data['timestamp'] as int;
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+    // Check if timestamp is not too old (if present) - 30 days max
+    if (data.containsKey('timestamp')) {
+      final timestamp = data['timestamp'] as int;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
 
-    if (now - timestamp > maxAge) {
-      print('QR code is too old');
-      return false;
+      if (now - timestamp > maxAge) {
+        print('QR code is too old');
+        return false;
+      }
     }
 
     return true;
   }
 
-  /// Generate a simple hash for QR verification
-  static String generateQRHash(String shopId) {
-    final input = '$shopId${DateTime.now().day}$_encryptionKey';
-    final bytes = utf8.encode(input);
-    final digest = sha256.convert(bytes);
-    return digest.toString().substring(0, 8); // First 8 characters
+  /// Extract shop ID from QR data
+  static String? extractShopId(String qrData) {
+    final data = parseShopQRData(qrData);
+    return data?['shop_id'];
   }
 
-  /// Generate user-friendly QR identifier for display
+  /// Extract shop name from QR data
+  static String? extractShopName(String qrData) {
+    final data = parseShopQRData(qrData);
+    return data?['shop_name'];
+  }
+
+  /// Generate user-friendly QR display ID
   static String generateDisplayId(String shopId) {
     final random = Random();
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final hash = generateQRHash(shopId);
+    final hash = shopId.substring(0, min(4, shopId.length)).toUpperCase();
     final randomNum = random.nextInt(999).toString().padLeft(3, '0');
-    return 'LL${hash.substring(0, 4).toUpperCase()}$randomNum';
+    return 'LL$hash$randomNum';
   }
 
-  /// Check if QR data is valid Local Legacy format
-  static bool isValidLocalLegacyQR(String qrData) {
-    return qrData.startsWith('LL_SHOP:') && qrData.split(':').length == 3;
-  }
-
-  /// Extract shop ID from encrypted QR (for caching purposes)
-  static String? extractShopIdFromQR(String qrData) {
-    final decryptedData = decryptShopQRData(qrData);
-    return decryptedData?['shop_id'];
+  /// Generate hash for verification
+  static String generateVerificationHash(String shopId, String customerId) {
+    final input = '$shopId-$customerId-${DateTime.now().day}';
+    final bytes = utf8.encode(input);
+    final digest = sha256.convert(bytes);
+    return digest.toString().substring(0, 8);
   }
 }
