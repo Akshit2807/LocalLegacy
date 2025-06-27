@@ -1,15 +1,17 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../core/config/firebase_config.dart';
 import '../core/models/firebase_shop_model.dart';
 import '../core/models/firebase_customer_shop_relation_model.dart';
+import '../core/models/user_model.dart';
+import '../core/services/qr_service.dart';
 import '../core/utils/qr_utils.dart';
 
 class ShopViewModel extends ChangeNotifier {
   FirebaseShopModel? _currentShop;
   List<FirebaseCustomerShopRelation> _customers = [];
   List<FirebaseTransactionModel> _transactions = [];
+  List<CustomerRequestWithDetails> _customerRequests = [];
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -17,6 +19,7 @@ class ShopViewModel extends ChangeNotifier {
   FirebaseShopModel? get currentShop => _currentShop;
   List<FirebaseCustomerShopRelation> get customers => _customers;
   List<FirebaseTransactionModel> get transactions => _transactions;
+  List<CustomerRequestWithDetails> get customerRequests => _customerRequests;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
@@ -74,9 +77,10 @@ class ShopViewModel extends ChangeNotifier {
         await _createNewShop(shopkeeperId);
       }
 
-      // Load customers and transactions
+      // Load customers, transactions and requests
       await _loadCustomers();
       await _loadTransactions();
+      await _loadCustomerRequests();
 
       // Setup real-time listeners
       _setupRealtimeListeners();
@@ -93,8 +97,14 @@ class ShopViewModel extends ChangeNotifier {
     final shopDocRef = FirebaseConfig.shopsCollection.doc();
     final shopId = shopDocRef.id;
 
-    // Generate QR data and base64 image
-    final qrData = QRUtils.generateShopQRData(shopId, shopkeeperId);
+    // Generate QR data using the service
+    final qrData = QRCodeService.generateShopQRData(
+      shopId: shopId,
+      shopName: 'My Shop',
+      shopkeeperId: shopkeeperId,
+    );
+
+    // Generate base64 QR image
     final qrBase64 = await QRUtils.generateQRAsBase64(qrData);
 
     final newShop = FirebaseShopModel(
@@ -108,7 +118,7 @@ class ShopViewModel extends ChangeNotifier {
       isActive: true,
     );
 
-    // Save shop to Firestore only (no Firebase Storage)
+    // Save shop to Firestore
     await shopDocRef.set(newShop.toFirestore());
     _currentShop = newShop;
   }
@@ -118,7 +128,7 @@ class ShopViewModel extends ChangeNotifier {
     if (_currentShop == null) return;
 
     try {
-      final snapshot = await FirebaseConfig.FirebaseCustomerShopRelationsCollection
+      final snapshot = await FirebaseConfig.customerShopRelationsCollection
           .where('shop_id', isEqualTo: _currentShop!.id)
           .orderBy('joined_date', descending: true)
           .get();
@@ -141,7 +151,7 @@ class ShopViewModel extends ChangeNotifier {
       final snapshot = await FirebaseConfig.transactionsCollection
           .where('shop_id', isEqualTo: _currentShop!.id)
           .orderBy('timestamp', descending: true)
-          .limit(50)
+          .limit(100)
           .get();
 
       _transactions = snapshot.docs
@@ -154,23 +164,115 @@ class ShopViewModel extends ChangeNotifier {
     }
   }
 
-  // Accept customer request
-  Future<bool> acceptCustomerRequest(String relationId, double creditLimit, DateTime dueDate) async {
+  // Load customer requests with details
+  Future<void> _loadCustomerRequests() async {
+    if (_currentShop == null) return;
+
+    try {
+      final requestsSnapshot = await FirebaseConfig.firestore
+          .collection('customer_requests_metadata')
+          .where('shop_id', isEqualTo: _currentShop!.id)
+          .where('status', isEqualTo: 'pending')
+          .orderBy('request_date', descending: true)
+          .get();
+
+      _customerRequests = [];
+
+      for (final doc in requestsSnapshot.docs) {
+        final data = doc.data();
+        final customerRequest = CustomerRequestWithDetails(
+          relationId: data['relation_id'],
+          customerId: data['customer_id'],
+          customerName: data['customer_name'] ?? 'Unknown Customer',
+          customerEmail: data['customer_email'] ?? '',
+          customerPhone: data['customer_phone'],
+          shopId: data['shop_id'],
+          shopName: data['shop_name'],
+          shopkeeperId: data['shopkeeper_id'],
+          requestDate: (data['request_date'] as Timestamp?)?.toDate() ?? DateTime.now(),
+          status: data['status'] ?? 'pending',
+        );
+        _customerRequests.add(customerRequest);
+      }
+
+      notifyListeners();
+    } catch (e) {
+      _setError('Failed to load customer requests: $e');
+    }
+  }
+
+  // Accept customer request with enhanced tracking
+  Future<bool> acceptCustomerRequest(
+      String relationId,
+      double creditLimit,
+      DateTime dueDate, {
+        CustomerRequestWithDetails? requestDetails,
+      }) async {
     _setLoading(true);
     _setError(null);
 
     try {
-      await FirebaseConfig.FirebaseCustomerShopRelationsCollection
-          .doc(relationId)
-          .update({
-        'status': 'approved',
-        'total_credit_limit': creditLimit,
-        'current_balance': creditLimit,
-        'due_date': Timestamp.fromDate(dueDate),
-        'updated_at': FieldValue.serverTimestamp(),
-      });
+      final batch = FirebaseConfig.batch();
 
+      // Update the relation
+      batch.update(
+        FirebaseConfig.customerShopRelationsCollection.doc(relationId),
+        {
+          'status': 'approved',
+          'total_credit_limit': creditLimit,
+          'current_balance': creditLimit,
+          'due_date': Timestamp.fromDate(dueDate),
+          'updated_at': FieldValue.serverTimestamp(),
+        },
+      );
+
+      // Update request metadata
+      final metadataQuery = await FirebaseConfig.firestore
+          .collection('customer_requests_metadata')
+          .where('relation_id', isEqualTo: relationId)
+          .limit(1)
+          .get();
+
+      if (metadataQuery.docs.isNotEmpty) {
+        batch.update(metadataQuery.docs.first.reference, {
+          'status': 'approved',
+          'approved_date': FieldValue.serverTimestamp(),
+          'credit_limit_set': creditLimit,
+          'due_date_set': Timestamp.fromDate(dueDate),
+        });
+      }
+
+      // Create welcome transaction
+      if (requestDetails != null) {
+        final transactionDoc = FirebaseConfig.transactionsCollection.doc();
+        final welcomeTransaction = FirebaseTransactionModel(
+          id: transactionDoc.id,
+          customerId: requestDetails.customerId,
+          shopId: _currentShop!.id,
+          shopkeeperId: _currentShop!.shopkeeperId,
+          amount: creditLimit,
+          type: TransactionType.credit,
+          description: 'Welcome to ${_currentShop!.shopName} - Credit limit approved',
+          timestamp: DateTime.now(),
+          metadata: {
+            'transaction_type': 'credit_approval',
+            'customer_name': requestDetails.customerName,
+            'initial_credit_limit': creditLimit,
+            'approved_by': 'shopkeeper',
+          },
+        );
+
+        batch.set(transactionDoc, welcomeTransaction.toFirestore());
+      }
+
+      // Commit all changes
+      await batch.commit();
+
+      // Refresh data
       await _loadCustomers();
+      await _loadTransactions();
+      await _loadCustomerRequests();
+
       _setLoading(false);
       return true;
     } catch (e) {
@@ -186,14 +288,35 @@ class ShopViewModel extends ChangeNotifier {
     _setError(null);
 
     try {
-      await FirebaseConfig.FirebaseCustomerShopRelationsCollection
-          .doc(relationId)
-          .update({
-        'status': 'rejected',
-        'updated_at': FieldValue.serverTimestamp(),
-      });
+      final batch = FirebaseConfig.batch();
+
+      // Update the relation
+      batch.update(
+        FirebaseConfig.customerShopRelationsCollection.doc(relationId),
+        {
+          'status': 'rejected',
+          'updated_at': FieldValue.serverTimestamp(),
+        },
+      );
+
+      // Update request metadata
+      final metadataQuery = await FirebaseConfig.firestore
+          .collection('customer_requests_metadata')
+          .where('relation_id', isEqualTo: relationId)
+          .limit(1)
+          .get();
+
+      if (metadataQuery.docs.isNotEmpty) {
+        batch.update(metadataQuery.docs.first.reference, {
+          'status': 'rejected',
+          'rejected_date': FieldValue.serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
 
       await _loadCustomers();
+      await _loadCustomerRequests();
       _setLoading(false);
       return true;
     } catch (e) {
@@ -203,8 +326,8 @@ class ShopViewModel extends ChangeNotifier {
     }
   }
 
-  // Update customer credit limit
-  Future<bool> updateCustomerCredit(String relationId, double newLimit) async {
+  // Update customer credit limit (Lend More functionality)
+  Future<bool> updateCustomerCredit(String relationId, double newLimit, {String? reason}) async {
     _setLoading(true);
     _setError(null);
 
@@ -213,11 +336,11 @@ class ShopViewModel extends ChangeNotifier {
       final difference = newLimit - relation.totalCreditLimit;
 
       // Start a batch operation
-      final batch = FirebaseConfig.firestore.batch();
+      final batch = FirebaseConfig.batch();
 
       // Update relation
       batch.update(
-        FirebaseConfig.FirebaseCustomerShopRelationsCollection.doc(relationId),
+        FirebaseConfig.customerShopRelationsCollection.doc(relationId),
         {
           'total_credit_limit': newLimit,
           'current_balance': relation.currentBalance + difference,
@@ -225,27 +348,30 @@ class ShopViewModel extends ChangeNotifier {
         },
       );
 
-      // Create transaction record if there's a difference
-      if (difference != 0) {
-        final transactionDoc = FirebaseConfig.transactionsCollection.doc();
-        final transaction = FirebaseTransactionModel(
-          id: transactionDoc.id,
-          customerId: relation.customerId,
-          shopId: relation.shopId,
-          shopkeeperId: relation.shopkeeperId,
-          amount: difference.abs(),
-          type: difference > 0 ? TransactionType.credit : TransactionType.debit,
-          description: 'Credit limit ${difference > 0 ? 'increased' : 'decreased'} by shopkeeper',
-          timestamp: DateTime.now(),
-          metadata: {
-            'previous_limit': relation.totalCreditLimit,
-            'new_limit': newLimit,
-            'adjustment_type': 'credit_limit_update',
-          },
-        );
+      // Create transaction record
+      final transactionDoc = FirebaseConfig.transactionsCollection.doc();
+      final transaction = FirebaseTransactionModel(
+        id: transactionDoc.id,
+        customerId: relation.customerId,
+        shopId: relation.shopId,
+        shopkeeperId: relation.shopkeeperId,
+        amount: difference.abs(),
+        type: difference > 0 ? TransactionType.credit : TransactionType.debit,
+        description: difference > 0
+            ? 'Lend More - Credit limit increased by shopkeeper'
+            : 'Credit limit reduced by shopkeeper',
+        timestamp: DateTime.now(),
+        metadata: {
+          'previous_limit': relation.totalCreditLimit,
+          'new_limit': newLimit,
+          'adjustment_amount': difference,
+          'adjustment_type': difference > 0 ? 'lend_more' : 'credit_reduction',
+          'reason': reason ?? 'Manual adjustment by shopkeeper',
+          'initiated_by': 'shopkeeper',
+        },
+      );
 
-        batch.set(transactionDoc, transaction.toFirestore());
-      }
+      batch.set(transactionDoc, transaction.toFirestore());
 
       // Commit batch
       await batch.commit();
@@ -261,13 +387,16 @@ class ShopViewModel extends ChangeNotifier {
     }
   }
 
-  // Process payment from customer
-  Future<bool> processPayment(String customerId, double amount, String description) async {
+  // Process payment from customer (Paid Up functionality)
+  Future<bool> processPaidUpPayment(String customerId, double amount, String description) async {
+    _setLoading(true);
+    _setError(null);
+
     try {
       final relation = _customers.firstWhere((c) => c.customerId == customerId);
 
       // Start a batch operation
-      final batch = FirebaseConfig.firestore.batch();
+      final batch = FirebaseConfig.batch();
 
       // Create transaction
       final transactionDoc = FirebaseConfig.transactionsCollection.doc();
@@ -278,11 +407,15 @@ class ShopViewModel extends ChangeNotifier {
         shopkeeperId: _currentShop!.shopkeeperId,
         amount: amount,
         type: TransactionType.credit,
-        description: description,
+        description: 'Paid Up - $description',
         timestamp: DateTime.now(),
         metadata: {
-          'payment_type': 'manual_payment',
+          'payment_type': 'paid_up',
           'processed_by': 'shopkeeper',
+          'previous_balance': relation.currentBalance,
+          'previous_used_amount': relation.usedAmount,
+          'new_balance': relation.currentBalance + amount,
+          'new_used_amount': relation.usedAmount - amount,
         },
       );
 
@@ -290,7 +423,7 @@ class ShopViewModel extends ChangeNotifier {
 
       // Update relation
       batch.update(
-        FirebaseConfig.FirebaseCustomerShopRelationsCollection.doc(relation.id),
+        FirebaseConfig.customerShopRelationsCollection.doc(relation.id),
         {
           'current_balance': relation.currentBalance + amount,
           'used_amount': relation.usedAmount - amount,
@@ -303,9 +436,11 @@ class ShopViewModel extends ChangeNotifier {
 
       await _loadCustomers();
       await _loadTransactions();
+      _setLoading(false);
       return true;
     } catch (e) {
       _setError('Failed to process payment: $e');
+      _setLoading(false);
       return false;
     }
   }
@@ -318,6 +453,7 @@ class ShopViewModel extends ChangeNotifier {
     _setError(null);
 
     try {
+      // Update shop in Firestore
       await FirebaseConfig.shopsCollection
           .doc(_currentShop!.id)
           .update({
@@ -326,9 +462,29 @@ class ShopViewModel extends ChangeNotifier {
         'updated_at': FieldValue.serverTimestamp(),
       });
 
+      // Regenerate QR code with new shop name
+      final newQrData = QRCodeService.generateShopQRData(
+        shopId: _currentShop!.id,
+        shopName: shopName,
+        shopkeeperId: _currentShop!.shopkeeperId,
+        address: address,
+      );
+
+      final newQrBase64 = await QRUtils.generateQRAsBase64(newQrData);
+
+      // Update QR code data
+      await FirebaseConfig.shopsCollection
+          .doc(_currentShop!.id)
+          .update({
+        'qr_code_data': newQrData,
+        'qr_code_base64': newQrBase64,
+      });
+
       _currentShop = _currentShop!.copyWith(
         shopName: shopName,
         address: address,
+        qrCodeData: newQrData,
+        qrCodeBase64: newQrBase64,
         updatedAt: DateTime.now(),
       );
 
@@ -342,49 +498,12 @@ class ShopViewModel extends ChangeNotifier {
     }
   }
 
-  // Regenerate QR code
-  Future<bool> regenerateQRCode() async {
-    if (_currentShop == null) return false;
-
-    _setLoading(true);
-    _setError(null);
-
-    try {
-      // Generate new QR data and base64 image
-      final qrData = QRUtils.generateShopQRData(_currentShop!.id, _currentShop!.shopkeeperId);
-      final qrBase64 = await QRUtils.generateQRAsBase64(qrData);
-
-      // Update shop with new QR (stored only in Firestore)
-      await FirebaseConfig.shopsCollection
-          .doc(_currentShop!.id)
-          .update({
-        'qr_code_data': qrData,
-        'qr_code_base64': qrBase64,
-        'updated_at': FieldValue.serverTimestamp(),
-      });
-
-      _currentShop = _currentShop!.copyWith(
-        qrCodeData: qrData,
-        qrCodeBase64: qrBase64,
-        updatedAt: DateTime.now(),
-      );
-
-      _setLoading(false);
-      notifyListeners();
-      return true;
-    } catch (e) {
-      _setError('Failed to regenerate QR code: $e');
-      _setLoading(false);
-      return false;
-    }
-  }
-
   // Setup real-time listeners
   void _setupRealtimeListeners() {
     if (_currentShop == null) return;
 
     // Listen to customer relation changes
-    FirebaseConfig.FirebaseCustomerShopRelationsCollection
+    FirebaseConfig.customerShopRelationsCollection
         .where('shop_id', isEqualTo: _currentShop!.id)
         .snapshots()
         .listen(
@@ -403,7 +522,7 @@ class ShopViewModel extends ChangeNotifier {
     FirebaseConfig.transactionsCollection
         .where('shop_id', isEqualTo: _currentShop!.id)
         .orderBy('timestamp', descending: true)
-        .limit(50)
+        .limit(100)
         .snapshots()
         .listen(
           (snapshot) {
@@ -414,6 +533,39 @@ class ShopViewModel extends ChangeNotifier {
       },
       onError: (error) {
         _setError('Error listening to transaction changes: $error');
+      },
+    );
+
+    // Listen to customer request changes
+    FirebaseConfig.firestore
+        .collection('customer_requests_metadata')
+        .where('shop_id', isEqualTo: _currentShop!.id)
+        .where('status', isEqualTo: 'pending')
+        .snapshots()
+        .listen(
+          (snapshot) async {
+        _customerRequests = [];
+
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          final customerRequest = CustomerRequestWithDetails(
+            relationId: data['relation_id'],
+            customerId: data['customer_id'],
+            customerName: data['customer_name'] ?? 'Unknown Customer',
+            customerEmail: data['customer_email'] ?? '',
+            customerPhone: data['customer_phone'],
+            shopId: data['shop_id'],
+            shopName: data['shop_name'],
+            shopkeeperId: data['shopkeeper_id'],
+            requestDate: (data['request_date'] as Timestamp?)?.toDate() ?? DateTime.now(),
+            status: data['status'] ?? 'pending',
+          );
+          _customerRequests.add(customerRequest);
+        }
+        notifyListeners();
+      },
+      onError: (error) {
+        _setError('Error listening to request changes: $error');
       },
     );
   }
@@ -442,39 +594,6 @@ class ShopViewModel extends ChangeNotifier {
     }).toList();
   }
 
-  // Get transactions for date range
-  List<FirebaseTransactionModel> getTransactionsForDateRange(
-      DateTime startDate, DateTime endDate) {
-    return _transactions.where((t) {
-      return t.timestamp.isAfter(startDate) && t.timestamp.isBefore(endDate);
-    }).toList();
-  }
-
-  // Search customers
-  List<FirebaseCustomerShopRelation> searchCustomers(String query) {
-    if (query.isEmpty) return _customers;
-
-    // Note: In a real app, you'd also search by customer name from user profiles
-    return _customers.where((c) {
-      return c.customerId.toLowerCase().contains(query.toLowerCase());
-    }).toList();
-  }
-
-  // Get pending customers
-  List<FirebaseCustomerShopRelation> get pendingCustomers => _customers
-      .where((c) => c.status == RequestStatus.pending)
-      .toList();
-
-  // Get approved customers
-  List<FirebaseCustomerShopRelation> get approvedCustomers => _customers
-      .where((c) => c.status == RequestStatus.approved)
-      .toList();
-
-  // Get rejected customers
-  List<FirebaseCustomerShopRelation> get rejectedCustomers => _customers
-      .where((c) => c.status == RequestStatus.rejected)
-      .toList();
-
   // Get monthly revenue
   double getMonthlyRevenue([DateTime? month]) {
     final targetMonth = month ?? DateTime.now();
@@ -498,13 +617,26 @@ class ShopViewModel extends ChangeNotifier {
         .fold(0.0, (sum, t) => sum + t.amount);
   }
 
-  // Get credit utilization percentage
+  // Get pending customers with details
+  List<CustomerRequestWithDetails> get pendingCustomerRequests =>
+      _customerRequests.where((r) => r.status == 'pending').toList();
+
+  // Get approved customers
+  List<FirebaseCustomerShopRelation> get approvedCustomers => _customers
+      .where((c) => c.status == RequestStatus.approved)
+      .toList();
+
+  // Get rejected customers
+  List<FirebaseCustomerShopRelation> get rejectedCustomers => _customers
+      .where((c) => c.status == RequestStatus.rejected)
+      .toList();
+
+  // Analytics methods
   double getCreditUtilizationPercentage() {
     if (totalMoneyAllocated == 0) return 0;
     return (totalMoneyUsed / totalMoneyAllocated) * 100;
   }
 
-  // Get average transaction amount
   double getAverageTransactionAmount() {
     if (_transactions.isEmpty) return 0;
     final totalAmount = _transactions.fold(0.0, (sum, t) => sum + t.amount);
@@ -532,39 +664,30 @@ class ShopViewModel extends ChangeNotifier {
     return sortedCustomers.take(limit).toList();
   }
 
-  // Refresh data
-  Future<void> refresh() async {
-    await _loadCustomers();
-    await _loadTransactions();
+  // Search customers
+  List<FirebaseCustomerShopRelation> searchCustomers(String query) {
+    if (query.isEmpty) return _customers;
+
+    return _customers.where((c) {
+      // Search by customer ID or find by request details
+      return c.customerId.toLowerCase().contains(query.toLowerCase());
+    }).toList();
   }
 
-  // Get QR code widget
-  Widget? getQRCodeWidget({double? size}) {
-    if (_currentShop?.qrCodeBase64.isNotEmpty == true) {
-      return QRUtils.createQRWidget(_currentShop!.qrCodeBase64, size: size);
-    }
-    return null;
+  // Get customer request details by relation ID
+  CustomerRequestWithDetails? getCustomerRequestDetails(String relationId) {
+    return _customerRequests
+        .where((r) => r.relationId == relationId)
+        .firstOrNull;
   }
 
-  // Validate QR code
-  bool validateQRCode(String qrCode) {
-    return QRUtils.isValidShopQR(qrCode);
-  }
-
-  // Get QR code size in KB
-  double getQRCodeSize() {
-    if (_currentShop?.qrCodeBase64.isNotEmpty == true) {
-      return QRUtils.getQRSizeKB(_currentShop!.qrCodeBase64);
-    }
-    return 0;
-  }
-
-  // Export shop data as JSON
+  // Export shop data
   Map<String, dynamic> exportShopData() {
     return {
       'shop': _currentShop?.toMap(),
       'customers': _customers.map((c) => c.toMap()).toList(),
       'transactions': _transactions.map((t) => t.toMap()).toList(),
+      'customer_requests': _customerRequests.map((r) => r.toMap()).toList(),
       'analytics': {
         'total_money_allocated': totalMoneyAllocated,
         'total_money_used': totalMoneyUsed,
@@ -581,6 +704,13 @@ class ShopViewModel extends ChangeNotifier {
     };
   }
 
+  // Refresh data
+  Future<void> refresh() async {
+    await _loadCustomers();
+    await _loadTransactions();
+    await _loadCustomerRequests();
+  }
+
   // Clear error message
   void clearError() {
     _errorMessage = null;
@@ -589,7 +719,70 @@ class ShopViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
-    // Firestore listeners are automatically cleaned up
     super.dispose();
+  }
+}
+
+/// Customer request with detailed information
+class CustomerRequestWithDetails {
+  final String relationId;
+  final String customerId;
+  final String customerName;
+  final String customerEmail;
+  final String? customerPhone;
+  final String shopId;
+  final String shopName;
+  final String shopkeeperId;
+  final DateTime requestDate;
+  final String status;
+
+  CustomerRequestWithDetails({
+    required this.relationId,
+    required this.customerId,
+    required this.customerName,
+    required this.customerEmail,
+    this.customerPhone,
+    required this.shopId,
+    required this.shopName,
+    required this.shopkeeperId,
+    required this.requestDate,
+    required this.status,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'relation_id': relationId,
+      'customer_id': customerId,
+      'customer_name': customerName,
+      'customer_email': customerEmail,
+      'customer_phone': customerPhone,
+      'shop_id': shopId,
+      'shop_name': shopName,
+      'shopkeeper_id': shopkeeperId,
+      'request_date': requestDate.toIso8601String(),
+      'status': status,
+    };
+  }
+
+  String get displayName => customerName.isNotEmpty ? customerName : 'Unknown Customer';
+  String get displayEmail => customerEmail.isNotEmpty ? customerEmail : 'No email';
+  String get displayPhone => customerPhone?.isNotEmpty == true ? customerPhone! : 'No phone';
+
+  String get formattedRequestDate {
+    final now = DateTime.now();
+    final difference = now.difference(requestDate);
+
+    if (difference.inDays == 0) {
+      if (difference.inHours == 0) {
+        return '${difference.inMinutes}m ago';
+      }
+      return '${difference.inHours}h ago';
+    } else if (difference.inDays == 1) {
+      return 'Yesterday';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}d ago';
+    } else {
+      return '${requestDate.day}/${requestDate.month}/${requestDate.year}';
+    }
   }
 }
